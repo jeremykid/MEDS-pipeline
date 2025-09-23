@@ -1,7 +1,7 @@
 # src/meds_pipeline/cli.py
 import click
 from meds_pipeline.etl.orchestrators.mimic_source import MIMICSourceETL
-# from meds_pipeline.etl.orchestrators.ahs_source import AHSSourceETL
+from meds_pipeline.etl.orchestrators.ahs_source import AHSSourceETL
 from meds_pipeline.etl.registry import build_components, REGISTRY
 import yaml, pandas as pd
 # from meds_pipeline.meds.schema import build_schema  # TODO
@@ -42,8 +42,8 @@ def run(source, components, cfg, base, plus):
     # choose source
     if source == "mimic":
         etl = MIMICSourceETL(comp_list, cfg_d, base_d)
-    # else:
-        # etl = AHSSourceETL(comp_list, cfg_d, base_d)
+    elif source == "ahs"    :
+        etl = AHSSourceETL(comp_list, cfg_d, base_d)
     df = etl.to_meds_plus() if plus else etl.to_meds_core()
     print(df)
     # schema = build_schema("configs/meds_schema_core.yaml",
