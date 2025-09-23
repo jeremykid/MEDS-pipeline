@@ -1,0 +1,5 @@
+seed: 42
+output_dir: "data/meds"
+format: "parquet"         # or "csv"
+compression: "snappy"
+partition_cols: ["event_type"] 

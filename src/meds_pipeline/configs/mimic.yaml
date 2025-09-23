@@ -1,0 +1,19 @@
+source: "mimic"
+raw_paths:
+  admissions:           "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/admissions.csv.gz"
+  ed:                   "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/edstays.csv.gz"
+  hosp_diagnoses_icd:   "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/diagnoses_icd.csv.gz"
+  ed_diagnoses_icd:     "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/diagnoses_icd.csv.gz"
+  procedures_icd:       "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/procedures_icd.csv.gz"
+  labtests:             "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/labevents.csv.gz"
+  medication:           "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz"
+  icu:                  "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/icu/icustays.csv.gz"
+keys:
+  subject_id: "subject_id"
+  encounter_id: "hadm_id"
+code_system_by_table:
+  diagnoses_icd: ["ICD9","ICD10"]
+  procedures_icd: ["ICD9PROC","ICD10PCS"]
+save_paths:
+  meds_core: "/data/padmalab_external/special_project/MEDS-dataset/mimic_core.parquet"
+  meds_plus: "/data/padmalab_external/special_project/MEDS-dataset/mimic_plus.parquet"
