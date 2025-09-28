@@ -11,3 +11,6 @@ raw_paths:
 keys:
   subject_id: "PATID"
   # ≈: "episode_order"  
+save_paths:
+  meds_core: "/data/padmalab_external/special_project/MEDS-dataset/ahs_core.parquet"
+  meds_plus: "/data/padmalab_external/special_project/MEDS-dataset/ahs_plus.parquet"
