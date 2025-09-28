@@ -15,8 +15,6 @@ Write Test
 
 ## structure
 
-## 项目结构
-
 ```
 MEDS-pipeline/
 ├── .gitignore
