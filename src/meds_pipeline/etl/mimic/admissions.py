@@ -7,7 +7,7 @@ from ..registry import register
 class MIMICAdmissions(ComponentETL):
     def run_core(self) -> pd.DataFrame:
         path = self.cfg["raw_paths"]["admissions"]
-        df = pd.read_csv(path)
+        df = self._read_csv_with_progress(path, "Loading admission data")
         # start
         start = pd.DataFrame({
             "subject_id": df["subject_id"],
@@ -29,7 +29,7 @@ class MIMICAdmissions(ComponentETL):
 
     def run_plus(self) -> pd.DataFrame:
         path = self.cfg["raw_paths"]["admissions"]
-        df = pd.read_csv(path)
+        df = self._read_csv_with_progress(path, "Loading admission data for PLUS format")
         plus_cols = {
             "encounter_id": df["hadm_id"].astype(str),
             "encounter_class": df["admission_type"],

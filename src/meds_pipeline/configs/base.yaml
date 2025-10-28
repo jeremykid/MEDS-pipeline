@@ -1,5 +1,5 @@
 seed: 42
-output_dir: "data/meds"
+output_dir: "/data/padmalab_external/special_project/meds_pipeline_output/"
 format: "parquet"         # or "csv"
 compression: "snappy"
 partition_cols: ["event_type"] 

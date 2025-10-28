@@ -81,6 +81,49 @@ class ComponentETL(ABC):
         """
         return self.run_core()
 
+    def _read_csv_with_progress(self, path: str, desc: str = None) -> pd.DataFrame:
+        """
+        Read CSV file with optional progress bar and patient limiting.
+
+        Parameters
+        ----------
+        path : str
+            Path to the CSV file
+        desc : str, optional
+            Description for the progress bar
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with optional patient limiting applied
+        """
+        show_progress = self.base_cfg.get("show_progress", True)
+        max_patients = self.base_cfg.get("max_patients", None)
+
+        if desc is None:
+            desc = f"Reading {self.name}"
+
+        if show_progress:
+            print(f"📖 {desc}...")
+
+        # Read the file
+        df = pd.read_csv(path, low_memory=False)
+
+        if show_progress:
+            print(f"   └─ Loaded {len(df):,} rows")
+
+        # Apply patient limiting if specified
+        if max_patients and 'subject_id' in df.columns:
+            original_patients = df['subject_id'].nunique()
+            unique_patients = df['subject_id'].unique()[:max_patients]
+            df = df[df['subject_id'].isin(unique_patients)]
+
+            if show_progress:
+                final_patients = df['subject_id'].nunique()
+                print(f"   └─ Limited to {final_patients:,}/{original_patients:,} patients, {len(df):,} rows")
+
+        return df
+
 
 class DataSourceETL(ABC):
     """
