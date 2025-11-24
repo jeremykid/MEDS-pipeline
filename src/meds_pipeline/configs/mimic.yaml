@@ -3,7 +3,7 @@ raw_paths:
   admissions:           "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/admissions.csv.gz"
   ed:                   "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/edstays.csv.gz"
   hosp_diagnoses_icd:   "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/diagnoses_icd.csv.gz"
-  ed_diagnoses_icd:     "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/diagnoses_icd.csv.gz"
+  ed_diagnoses_icd:     "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/diagnosis.csv.gz"
   procedures_icd:       "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/procedures_icd.csv.gz"
   labtests:             "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/labevents.csv.gz"
   medication:           "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz"

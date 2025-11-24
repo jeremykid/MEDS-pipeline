@@ -9,7 +9,12 @@ AHS Diagnosis ETL Component
 
 Data sources:
 - DAD (Discharge Abstract Database): SAS format with DXCODE1-DXCODE25
+  * Hospital/inpatient diagnoses
+  * Uses ICD-10-CA coding system
+  
 - ED (Emergency Department): Pickle format with DXCODE1-DXCODE10
+  * Emergency department diagnoses
+  * Uses ICD-10-CA coding system
 
 Expected DAD columns:
 PATID	ADMITDATE_DT	DISDATE_DT	AGE_ADMIT	SEX	DXCODE1	DXCODE2	...	DXCODE25
@@ -20,11 +25,28 @@ PATID	VISIT_DATE_DT	DXCODE1	DXCODE2	...	DXCODE10
 46	2021-05-24	R53	...
 128	2021-05-19	F151	F155	...
 
-Note: All diagnosis codes appear to be ICD-10 format
+Note: All diagnosis codes appear to be ICD-10-CA (Canadian version)
 '''
 
 @register("diagnosis")
 class AHSDiagnosis(ComponentETL):
+    
+    @staticmethod
+    def _build_diagnosis_code(icd_code: str) -> str:
+        """
+        Build MEDS-compliant diagnosis code in the format:
+        DIAGNOSIS//ICD10CA//code
+        
+        Args:
+            icd_code: The raw ICD-10-CA code
+            
+        Returns:
+            Formatted diagnosis code string
+        """
+        if pd.isna(icd_code) or str(icd_code).strip() == "":
+            return None
+        
+        return f"DIAGNOSIS//ICD10CA//{icd_code}"
     
     def _load_dad_data(self):
         """Load DAD data from SAS file"""
@@ -59,14 +81,16 @@ class AHSDiagnosis(ComponentETL):
             source_type: 'DAD' or 'ED' to determine number of DXCODE columns
         
         Returns:
-            DataFrame with melted diagnosis codes
+            DataFrame with melted diagnosis codes and diagnosis_source column
         """
         if source_type == 'DAD':
             dx_columns = [f'DXCODE{i}' for i in range(1, 26)]  # DXCODE1-DXCODE25
             time_col = 'ADMITDATE_DT'
+            diagnosis_source = 'INPATIENT'
         elif source_type == 'ED':
             dx_columns = [f'DXCODE{i}' for i in range(1, 11)]  # DXCODE1-DXCODE10
             time_col = 'VISIT_DATE_DT'
+            diagnosis_source = 'ED'
         else:
             raise ValueError(f"Unknown source_type: {source_type}")
         
@@ -93,6 +117,7 @@ class AHSDiagnosis(ComponentETL):
         
         # Add source information
         melted['source_table'] = source_type
+        melted['diagnosis_source'] = diagnosis_source
         
         # Filter out empty/null diagnosis codes
         melted = melted[melted['diagnosis_code'].notna()]
@@ -116,19 +141,23 @@ class AHSDiagnosis(ComponentETL):
         # Combine both datasets
         all_diagnoses = pd.concat([dad_diagnoses, ed_diagnoses], ignore_index=True)
         
+        # Build MEDS-compliant diagnosis codes
+        all_diagnoses['meds_code'] = all_diagnoses['diagnosis_code'].apply(self._build_diagnosis_code)
+        
         # Create MEDS core structure
         out = pd.DataFrame({
             "subject_id": all_diagnoses["PATID"].astype(str),
             "time": pd.to_datetime(all_diagnoses["event_time"], errors="coerce"),
             "event_type": "diagnosis",
-            "code": all_diagnoses["diagnosis_code"].astype(str),
-            "code_system": "ICD-10",  # AHS primarily uses ICD-10
+            "code": all_diagnoses["meds_code"].astype(str),
+            "diagnosis_source": all_diagnoses["diagnosis_source"],
         })
         
         # Filter out invalid records
-        out = out.dropna(subset=["subject_id", "time"])
+        out = out.dropna(subset=["subject_id", "time", "code"])
         out = out[out["subject_id"].astype(str).str.strip() != ""]
-        out = out[out["code"].astype(str).str.strip() != ""].reset_index(drop=True)
+        out = out[out["code"].astype(str).str.strip() != ""]
+        out = out[out["code"] != "None"].reset_index(drop=True)
         
         return out
     
@@ -148,6 +177,9 @@ class AHSDiagnosis(ComponentETL):
         # Combine both datasets
         all_diagnoses = pd.concat([dad_diagnoses, ed_diagnoses], ignore_index=True)
         
+        # Build MEDS-compliant diagnosis codes
+        all_diagnoses['meds_code'] = all_diagnoses['diagnosis_code'].apply(self._build_diagnosis_code)
+        
         # Get core data with same filtering
         core = self.run_core().reset_index(drop=True)
         
@@ -156,7 +188,8 @@ class AHSDiagnosis(ComponentETL):
             all_diagnoses["PATID"].notna() &
             pd.to_datetime(all_diagnoses["event_time"], errors="coerce").notna() &
             (all_diagnoses["PATID"].astype(str).str.strip() != "") &
-            (all_diagnoses["diagnosis_code"].astype(str).str.strip() != "")
+            (all_diagnoses["diagnosis_code"].astype(str).str.strip() != "") &
+            all_diagnoses["meds_code"].notna()
         )
         df_filtered = all_diagnoses[valid_mask].reset_index(drop=True)
         
@@ -177,13 +210,21 @@ class AHSDiagnosis(ComponentETL):
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:
         """
         Create human-readable metadata for diagnosis records, e.g.:
-        "source=DAD | seq=1 | dx_col=DXCODE1"
+        "source=INPATIENT | table=DAD | seq=1 | dx_col=DXCODE1"
+        or
+        "source=ED | table=ED | seq=5 | dx_col=DXCODE5"
         """
         parts = []
         
+        # Add diagnosis source (INPATIENT vs ED)
+        if "diagnosis_source" in df.columns:
+            diag_source_txt = "source=" + df["diagnosis_source"].astype(str)
+            parts.append(diag_source_txt)
+        
+        # Add source table (DAD vs ED)
         if "source_table" in df.columns:
-            source_txt = "source=" + df["source_table"].astype(str)
-            parts.append(source_txt)
+            table_txt = "table=" + df["source_table"].astype(str)
+            parts.append(table_txt)
             
         if "sequence_num" in df.columns:
             seq_txt = "seq=" + df["sequence_num"].astype(str)

@@ -54,6 +54,7 @@ python3 -m meds_pipeline.cli run \
   --source mimic \
   --components medicines \
   --max-patients 100 \
+  --core \
   --progress
 ```
 
@@ -106,6 +107,10 @@ With progress display enabled, you'll see output like this:
 Data processing completed in 15.23 seconds
 Generated 2,345 rows for 100 unique patients
 ```
+
+TODO: maybe save in <source>_{component}_meds_{plus|core}_part_{NNN}.parquet
+
+Note on output chunking: when the pipeline's output contains more than the default chunk size (100,000 rows), results are split into multiple files named `<source>_meds_{plus|core}_part_{NNN}.parquet` and saved under `base.output_dir/<source>/`; otherwise a single file `<source>_meds_{plus|core}.parquet` is written.
 
 ## Parameter Reference
 
