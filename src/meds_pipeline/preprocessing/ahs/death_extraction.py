@@ -197,8 +197,31 @@ def build_death_table(cfg_path: str = "ahs.yaml") -> pd.DataFrame:
         date_col = next((c for c in possible_dates if c in registry_df.columns), None)
 
         if date_col:
+            # PERS_REAP_END_RSN_CODE_GRP == 'Died' or DEATH_IND == '1'
             def registry_filter(df):
-                return pd.to_numeric(df["DEATH_IND"], errors="coerce").fillna(0).astype(int) == 1
+                # Return boolean mask where either reason code indicates 'Died' (case-insensitive)
+                # or DEATH_IND equals 1 (numeric or string '1').
+                has_rsn = "PERS_REAP_END_RSN_CODE_GRP" in df.columns
+                has_death_ind = "DEATH_IND" in df.columns
+
+                if not has_rsn and not has_death_ind:
+                    return pd.Series(False, index=df.index)
+
+                rsn_mask = pd.Series(False, index=df.index)
+                if has_rsn:
+                    rsn_mask = (
+                        df["PERS_REAP_END_RSN_CODE_GRP"]
+                        .astype(str)
+                        .str.strip()
+                        .str.lower()
+                        .eq("died")
+                    )
+
+                ind_mask = pd.Series(False, index=df.index)
+                if has_death_ind:
+                    ind_mask = pd.to_numeric(df["DEATH_IND"], errors="coerce").fillna(0).astype(int) == 1
+
+                return rsn_mask | ind_mask
 
             _assign_death_from_source(all_patids_df, registry_df, date_col, "registry", filter_mask=registry_filter)
         else:
@@ -264,7 +287,7 @@ if __name__ == "__main__":
     # Example command-line invocations (choose one):
     # 1) Run as a script (when working in the repo):
     #    PYTHONPATH=src python3 src/meds_pipeline/preprocessing/ahs/death_extraction.py \
-    #        --cfg src/meds_pipeline/configs/ahs.yaml --save death_table.parquet --verbose
+    #        --cfg src/meds_pipeline/configs/ahs.yaml --save  --verbose
     # 2) Run as a module (installed package / importable path):
     #    python -m meds_pipeline.preprocessing.ahs.death_extraction \
     #        --cfg src/meds_pipeline/configs/ahs.yaml --show-sample

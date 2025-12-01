@@ -27,16 +27,22 @@ class MIMICAdmissions(ComponentETL):
         out = pd.concat([start, end], ignore_index=True)
         return out
 
+    # ADMIT//HOSP//{admission_type}, ADMIT//ED//{admission_type}, DISCHARGE//HOSP//{discharge_location}
     def run_plus(self) -> pd.DataFrame:
         path = self.cfg["raw_paths"]["admissions"]
         df = self._read_csv_with_progress(path, "Loading admission data for PLUS format")
-        plus_cols = {
-            "encounter_id": df["hadm_id"].astype(str),
+        plus_start_cols = {
             "encounter_class": df["admission_type"],
-            "value_text": df["discharge_location"],
+            "source_table": "hosp.admissions",
+        }
+        plus_end_cols = {
+            "encounter_class": df["discharge_location"],
             "source_table": "hosp.admissions",
         }
         core = self.run_core().reset_index(drop=True)
-        for k, v in plus_cols.items():
-            core.loc[core["event_type"].isin(["encounter.start","encounter.end"]), k] = v
+        for k, v in plus_start_cols.items():
+            core.loc[core["event_type"].isin(["encounter.start"]), k] = v
+        for k, v in plus_end_cols.items():
+            core.loc[core["event_type"].isin(["encounter.end"]), k] = v
+
         return core
