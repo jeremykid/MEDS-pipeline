@@ -49,12 +49,20 @@ class AHSEDs(ComponentETL):
         if missing_cols:
             raise KeyError(f"Missing required columns: {missing_cols}")
         
+        # Build ED admission codes with format: ADMIT//ED//{ADMITBYAMB}
+        # Check if ADMITBYAMB column exists, otherwise use empty string
+        if "ADMITBYAMB" in df.columns:
+            ed_codes = "ADMIT//ED//" + df["ADMITBYAMB"].astype(str).fillna("")
+        else:
+            # Fallback if ADMITBYAMB doesn't exist
+            ed_codes = "ADMIT//ED//"
+        
         # Create ED visit encounters (only start events since ED visits typically don't have discharge times)
         ed_visits = pd.DataFrame({
             "subject_id": df["PATID"].astype(str),
             "time": pd.to_datetime(df["VISIT_DATE_DT"], errors="coerce"),
             "event_type": "ed_visit",
-            "code": "ED_VISIT",
+            "code": ed_codes,
             "code_system": "AHS_ED",
         })
         

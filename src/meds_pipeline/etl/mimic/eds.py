@@ -31,21 +31,35 @@ class MIMICEDs(ComponentETL):
         if missing_cols:
             raise KeyError(f"Missing required columns: {missing_cols}")
         
+        # Build ED entry codes with format: ADMIT//ED//{arrival_transport}
+        if "arrival_transport" in df.columns:
+            ed_entry_codes = "ADMIT//ED//" + df["arrival_transport"].astype(str).fillna("")
+        else:
+            ed_entry_codes = "ADMIT//ED//"
+            print("⚠️  Warning: 'arrival_transport' column not found, using default ED entry code")
+        
         # ED entry events
         entry = pd.DataFrame({
-            "subject_id": df["subject_id"].astype(str),
+            "subject_id": df["subject_id"],
             "time": pd.to_datetime(df["intime"], errors="coerce"),
             "event_type": "ed.entry",
-            "code": "ED_ENTRY",
+            "code": ed_entry_codes,
             "code_system": "EVENT",
         })
         
+        # Build ED exit codes with format: DISCHARGE//ED//{disposition}
+        if "disposition" in df.columns:
+            ed_exit_codes = "DISCHARGE//ED//" + df["disposition"].astype(str).fillna("")
+        else:
+            ed_exit_codes = "DISCHARGE//ED//"
+            print("⚠️  Warning: 'disposition' column not found, using default ED exit code")
+        
         # ED exit events
         exit = pd.DataFrame({
-            "subject_id": df["subject_id"].astype(str),
+            "subject_id": df["subject_id"],
             "time": pd.to_datetime(df["outtime"], errors="coerce"),
             "event_type": "ed.exit",
-            "code": "ED_EXIT", 
+            "code": ed_exit_codes, 
             "code_system": "EVENT",
         })
         

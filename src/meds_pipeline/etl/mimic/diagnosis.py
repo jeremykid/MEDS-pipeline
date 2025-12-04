@@ -32,7 +32,7 @@ class MIMICDiagnosis(ComponentETL):
     def _build_diagnosis_code(icd_code: str, icd_version: int) -> str:
         """
         Build MEDS-compliant diagnosis code in the format:
-        DIAGNOSIS//ICD9CM//code or DIAGNOSIS//ICD10CM//code
+        DIAGNOSIS//ICD//9//code or DIAGNOSIS//ICD//10//code
         
         Args:
             icd_code: The raw ICD code
@@ -40,18 +40,26 @@ class MIMICDiagnosis(ComponentETL):
             
         Returns:
             Formatted diagnosis code string
+        
+        Examples:
+            - ICD-9: "3089" -> "DIAGNOSIS//ICD//9//3089"
+            - ICD-10: "S32431A" -> "DIAGNOSIS//ICD//10//S32431A"
         """
         if pd.isna(icd_version) or pd.isna(icd_code):
             return None
         
+        icd_code_str = str(icd_code).strip()
+        if not icd_code_str:
+            return None
+        
         icd_version_int = int(icd_version)
         if icd_version_int == 9:
-            return f"DIAGNOSIS//ICD9CM//{icd_code}"
+            return f"DIAGNOSIS//ICD//9//{icd_code_str}"
         elif icd_version_int == 10:
-            return f"DIAGNOSIS//ICD10CM//{icd_code}"
+            return f"DIAGNOSIS//ICD//10//{icd_code_str}"
         else:
             # Fallback for unexpected versions
-            return f"DIAGNOSIS//ICD{icd_version_int}CM//{icd_code}"
+            return f"DIAGNOSIS//ICD//{icd_version_int}//{icd_code_str}"
     
     def _load_hospital_diagnoses(self) -> pd.DataFrame:
         """Load hospital (inpatient) diagnoses from hosp/diagnoses_icd.csv.gz"""
@@ -173,62 +181,14 @@ class MIMICDiagnosis(ComponentETL):
         return out
     
     def run_plus(self) -> pd.DataFrame:
-        # Load both hospital and ED diagnoses
-        hosp_diagnoses = self._load_hospital_diagnoses()
-        ed_diagnoses = self._load_ed_diagnoses()
-        
-        # Combine both sources
-        all_diagnoses = pd.concat([hosp_diagnoses, ed_diagnoses], ignore_index=True)
-        
-        # Build MEDS-compliant diagnosis codes
-        all_diagnoses['meds_code'] = all_diagnoses.apply(
-            lambda row: self._build_diagnosis_code(row['icd_code'], row['icd_version']),
-            axis=1
+        """
+        DEPRECATED: MEDS-PLUS export has been removed. Use run_core() instead.
+        This method is kept for backward compatibility but will raise an error.
+        """
+        raise RuntimeError(
+            "MEDS-PLUS export has been removed. Only MEDS-CORE is supported. "
+            "Please use run_core() instead."
         )
-        
-        # Get core data with same filtering
-        core = self.run_core().reset_index(drop=True)
-        
-        # Apply same filtering to original data to maintain alignment
-        valid_mask = (
-            all_diagnoses["subject_id"].notna() &
-            pd.to_datetime(all_diagnoses["time_col"], errors="coerce").notna() &
-            (all_diagnoses["subject_id"].astype(str).str.strip() != "") &
-            (all_diagnoses["icd_code"].astype(str).str.strip() != "") &
-            all_diagnoses["meds_code"].notna()
-        )
-        df_filtered = all_diagnoses[valid_mask].reset_index(drop=True)
-        
-        # Add diagnosis-specific metadata
-        if "hadm_id" in df_filtered.columns:
-            core["hadm_id"] = df_filtered["hadm_id"].fillna("").astype(str)
-        
-        if "stay_id" in df_filtered.columns:
-            core["stay_id"] = df_filtered["stay_id"].fillna("").astype(str)
-            
-        if "seq_num" in df_filtered.columns:
-            core["seq_num"] = df_filtered["seq_num"].astype(str)
-            
-        if "long_title" in df_filtered.columns:
-            core["diagnosis_description"] = df_filtered["long_title"].astype(str)
-            
-        if "dischtime" in df_filtered.columns:
-            core["discharge_time"] = pd.to_datetime(df_filtered["dischtime"], errors="coerce")
-        
-        # Add ICD version for reference
-        if "icd_version" in df_filtered.columns:
-            core["icd_version"] = df_filtered["icd_version"].astype(str)
-            
-        # Create value_text with diagnosis metadata
-        core["value_text"] = self._assemble_diagnosis_metadata(df_filtered)
-        
-        # Provenance tracking - distinguish hospital vs ED
-        core["source_table"] = df_filtered["diagnosis_source"].apply(
-            lambda x: "HOSP_DIAGNOSES_ICD" if x == "INPATIENT" else "ED_DIAGNOSES_ICD"
-        )
-        core["provenance_id"] = (core.index.astype(int) + 1).astype(str)
-        
-        return core
     
     @staticmethod
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:

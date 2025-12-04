@@ -132,15 +132,16 @@ class DataSourceETL(ABC):
 
     Responsibilities:
       - Instantiate and hold a list of components for a given source (e.g., MIMIC or AHS).
-      - Provide two public methods:
+      - Provide public method:
           * to_meds_core() : concatenate component Core outputs
-          * to_meds_plus() : concatenate component Plus outputs
+      - to_meds_plus() is deprecated and will raise an error
       - Do NOT write to disk here—return DataFrames; writing/validation can be done by caller.
 
     Typical usage:
       orchestrator = MIMICSourceETL(["admissions", "diagnoses_icd"], cfg, base_cfg)
       df_core = orchestrator.to_meds_core()
-      df_plus = orchestrator.to_meds_plus()
+    
+    Note: MEDS-PLUS has been removed. Only MEDS-CORE is supported.
     """
 
     def __init__(self, components: List[ComponentETL]) -> None:
@@ -168,11 +169,9 @@ class DataSourceETL(ABC):
     @abstractmethod
     def to_meds_plus(self) -> pd.DataFrame:
         """
-        Execute all components and return the concatenated MEDS-Plus DataFrame.
-
-        Required behavior:
-          - Call `run_plus()` on each component.
-          - Concatenate (pd.concat) and return the combined DataFrame.
-          - Leave validation (schema checks) to upstream code.
+        DEPRECATED: MEDS-PLUS has been removed. Use to_meds_core() instead.
+        
+        This method is kept for backward compatibility but should raise an error
+        in all implementations.
         """
         raise NotImplementedError

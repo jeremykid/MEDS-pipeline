@@ -1,6 +1,8 @@
 # MEDS-pipeline
 MEDS pipeline for both MIMIC and AHS datasets
 
+**Note**: This pipeline only supports MEDS-CORE format. MEDS-PLUS has been removed.
+
 ## Quick Start Examples
 
 ```bash
@@ -15,6 +17,12 @@ python3 -m meds_pipeline.cli run --source ahs --components admissions --cfg ahs.
 
 # AHS medicines component (100 patients)
 python3 -m meds_pipeline.cli run --source ahs --components medicines --cfg ahs.yaml --max-patients 100
+
+# MIMIC with multiple components (100 patients, CORE format - default)
+PYTHONPATH=src python3 -m meds_pipeline.cli run --source mimic --components admissions,eds --cfg src/meds_pipeline/configs/mimic.yaml --max-patients 100 --progress
+
+# AHS with multiple components (100 patients, CORE format - default)
+PYTHONPATH=src python3 -m meds_pipeline.cli run --source ahs --components admissions,eds --cfg src/meds_pipeline/configs/ahs.yaml --max-patients 100 --progress
 ```
 
 ## Progress Display and Patient Limiting Features
@@ -49,12 +57,11 @@ python3 -m meds_pipeline.cli run \
 
 #### 1. Test Mode (Recommended for Getting Started)
 ```bash
-# Process only 100 patients for quick testing
+# Process only 100 patients for quick testing (CORE format is default)
 python3 -m meds_pipeline.cli run \
   --source mimic \
   --components medicines \
   --max-patients 100 \
-  --core \
   --progress
 ```
 
@@ -91,12 +98,12 @@ python3 -m meds_pipeline.cli run \
 With progress display enabled, you'll see output like this:
 
 ```
-🚀 Processing 1 components for MEDS-PLUS...
+🚀 Processing 1 components...
 📊 Patient limit: 100
 ============================================================
 
 📋 Component 1/1: medicines
-📖 Loading medication data for PLUS format...
+📖 Loading medication data...
    └─ Loaded 1,234,567 rows
    └─ Limited to 100/45,678 patients, 2,345 rows
    ✅ Generated 2,345 rows for 100 patients
@@ -108,9 +115,7 @@ Data processing completed in 15.23 seconds
 Generated 2,345 rows for 100 unique patients
 ```
 
-TODO: maybe save in <source>_{component}_meds_{plus|core}_part_{NNN}.parquet
-
-Note on output chunking: when the pipeline's output contains more than the default chunk size (100,000 rows), results are split into multiple files named `<source>_meds_{plus|core}_part_{NNN}.parquet` and saved under `base.output_dir/<source>/`; otherwise a single file `<source>_meds_{plus|core}.parquet` is written.
+Note on output chunking: when the pipeline's output contains more than the default chunk size (100,000 rows), results are split into multiple files named `<source>_meds_core_part_{NNN}.parquet` and saved under `base.output_dir/<source>/`; otherwise a single file `<source>_meds_core.parquet` is written.
 
 ## Parameter Reference
 
@@ -121,7 +126,6 @@ Note on output chunking: when the pipeline's output contains more than the defau
 | `--no-progress` | flag | False | Hide progress information |
 | `--source` | choice | Required | Data source: mimic or ahs |
 | `--components` | string | Required | Comma-separated list of components |
-| `--plus/--core` | flag | plus | Output format: MEDS-PLUS or MEDS-CORE |
 
 ## Recommended Workflow
 

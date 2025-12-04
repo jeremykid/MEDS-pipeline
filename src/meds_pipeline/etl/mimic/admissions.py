@@ -8,20 +8,28 @@ class MIMICAdmissions(ComponentETL):
     def run_core(self) -> pd.DataFrame:
         path = self.cfg["raw_paths"]["admissions"]
         df = self._read_csv_with_progress(path, "Loading admission data")
+        
+        # Build admission codes with format: ADMIT//HOSP//{admission_type}
+        admit_codes = "ADMIT//HOSP//" + df["admission_type"].astype(str).fillna("")
+        
         # start
         start = pd.DataFrame({
             "subject_id": df["subject_id"],
-            "time": pd.to_datetime(df["admittime"]),
+            "time": pd.to_datetime(df["admittime"], errors="coerce"),
             "event_type": "encounter.start",
-            "code": "ADMIT",
+            "code": admit_codes,
             "code_system": "EVENT",
         })
+        
+        # Build discharge codes with format: DISCHARGE//HOSP//{discharge_location}
+        discharge_codes = "DISCHARGE//HOSP//" + df["discharge_location"].astype(str).fillna("")
+        
         # end
         end = pd.DataFrame({
             "subject_id": df["subject_id"],
-            "time": pd.to_datetime(df["dischtime"]),
+            "time": pd.to_datetime(df["dischtime"], errors="coerce"),
             "event_type": "encounter.end",
-            "code": "DISCHARGE",
+            "code": discharge_codes,
             "code_system": "EVENT",
         })
         out = pd.concat([start, end], ignore_index=True)

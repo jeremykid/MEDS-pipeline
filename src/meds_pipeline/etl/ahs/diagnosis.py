@@ -162,49 +162,14 @@ class AHSDiagnosis(ComponentETL):
         return out
     
     def run_plus(self) -> pd.DataFrame:
-        # Load both data sources
-        dad_df = self._load_dad_data()
-        ed_df = self._load_ed_data()
-        
-        # Extract diagnosis codes from both sources
-        dad_diagnoses = self._extract_diagnosis_codes(dad_df, 'DAD')
-        ed_diagnoses = self._extract_diagnosis_codes(ed_df, 'ED')
-        
-        # Rename time columns to standardize
-        dad_diagnoses = dad_diagnoses.rename(columns={'ADMITDATE_DT': 'event_time'})
-        ed_diagnoses = ed_diagnoses.rename(columns={'VISIT_DATE_DT': 'event_time'})
-        
-        # Combine both datasets
-        all_diagnoses = pd.concat([dad_diagnoses, ed_diagnoses], ignore_index=True)
-        
-        # Build MEDS-compliant diagnosis codes
-        all_diagnoses['meds_code'] = all_diagnoses['diagnosis_code'].apply(self._build_diagnosis_code)
-        
-        # Get core data with same filtering
-        core = self.run_core().reset_index(drop=True)
-        
-        # Apply same filtering to maintain alignment
-        valid_mask = (
-            all_diagnoses["PATID"].notna() &
-            pd.to_datetime(all_diagnoses["event_time"], errors="coerce").notna() &
-            (all_diagnoses["PATID"].astype(str).str.strip() != "") &
-            (all_diagnoses["diagnosis_code"].astype(str).str.strip() != "") &
-            all_diagnoses["meds_code"].notna()
+        """
+        DEPRECATED: MEDS-PLUS export has been removed. Use run_core() instead.
+        This method is kept for backward compatibility but will raise an error.
+        """
+        raise RuntimeError(
+            "MEDS-PLUS export has been removed. Only MEDS-CORE is supported. "
+            "Please use run_core() instead."
         )
-        df_filtered = all_diagnoses[valid_mask].reset_index(drop=True)
-        
-        # Add AHS-specific diagnosis metadata
-        core["sequence_num"] = df_filtered["sequence_num"].astype(str)
-        core["source_table"] = df_filtered["source_table"]
-        core["diagnosis_sequence"] = df_filtered["dx_sequence"]
-        
-        # Create value_text with diagnosis metadata
-        core["value_text"] = self._assemble_diagnosis_metadata(df_filtered)
-        
-        # Provenance tracking
-        core["provenance_id"] = (core.index.astype(int) + 1).astype(str)
-        
-        return core
     
     @staticmethod
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:

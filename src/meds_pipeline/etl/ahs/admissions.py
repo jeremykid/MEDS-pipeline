@@ -11,19 +11,26 @@ class AHSAdmissions(ComponentETL):
         # df = pd.read_csv(path)
         df, meta = pyreadstat.read_sas7bdat(path, output_format="pandas")
         # print (df.columns)
+        
+        # Build admission codes with format: ADMIT//HOSP//{ADMITCAT} @TODO creating map for ADMITCAT?
+        admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].astype(str).fillna("")
+        
         start = pd.DataFrame({
             "subject_id": df["PATID"],
-            "time": pd.to_datetime(df["ADMITDATE_DT"]),
+            "time": pd.to_datetime(df["ADMITDATE_DT"], errors="coerce"),
             "event_type": "encounter.start",
-            "code": "ADMIT",
+            "code": admit_codes,
             "code_system": "EVENT",
         })
 
+        # Build discharge codes with format: DISCHARGE//HOSP//{DISP}
+        discharge_codes = "DISCHARGE//HOSP//" + df["DISP"].astype(str).fillna("")
+        
         end = pd.DataFrame({
             "subject_id": df["PATID"],
-            "time": pd.to_datetime(df["DISDATE_DT"]),
+            "time": pd.to_datetime(df["DISDATE_DT"], errors="coerce"),
             "event_type": "encounter.end",
-            "code": "DISCHARGE",
+            "code": discharge_codes,
             "code_system": "EVENT",
         })
         out = pd.concat([start, end], ignore_index=True)

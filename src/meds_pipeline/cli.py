@@ -32,10 +32,9 @@ def _load(path_or_pkg_rel):
 @click.option("--components", help="Comma-separated, e.g. admissions,diagnoses_icd", required=True)
 @click.option("--cfg", default="mimic.yaml")
 @click.option("--base", default="base.yaml")
-@click.option("--plus/--core", default=True, help="Export MEDS-PLUS (default) or CORE")
 @click.option("--max-patients", type=int, default=None, help="Limit number of patients to process (for testing)")
 @click.option("--progress/--no-progress", default=True, help="Show progress bar")
-def run(source, components, cfg, base, plus, max_patients, progress):
+def run(source, components, cfg, base, max_patients, progress):
     cfg_d  = _load(cfg)
     base_d = _load(base)    
     
@@ -58,7 +57,7 @@ def run(source, components, cfg, base, plus, max_patients, progress):
         click.echo(f"Limiting to first {max_patients} patients")
     
     start_time = time.time()
-    df = etl.to_meds_plus() if plus else etl.to_meds_core()
+    df = etl.to_meds_core()
     end_time = time.time()
     
     click.echo(f"Data processing completed in {end_time - start_time:.2f} seconds")
@@ -77,7 +76,7 @@ def run(source, components, cfg, base, plus, max_patients, progress):
     
     if total_rows <= chunk_size:
         # Single file if small enough
-        output_path = output_dir / f"{source}_meds_{'plus' if plus else 'core'}.parquet"
+        output_path = output_dir / f"{source}_meds_core.parquet"
         df.to_parquet(output_path, index=False)
         click.echo(f"Saved to {output_path}: {total_rows:,} rows")
     else:
@@ -93,7 +92,7 @@ def run(source, components, cfg, base, plus, max_patients, progress):
             end_idx = min((i + 1) * chunk_size, total_rows)
             chunk_df = df.iloc[start_idx:end_idx]
             
-            output_path = output_dir / f"{source}_meds_{'plus' if plus else 'core'}_part_{i+1:03d}.parquet"
+            output_path = output_dir / f"{source}_meds_core_part_{i+1:03d}.parquet"
             chunk_df.to_parquet(output_path, index=False)
             if not progress:  # Only show individual chunk messages if no progress bar
                 click.echo(f"Saved chunk {i+1}/{num_chunks} to {output_path}: {len(chunk_df):,} rows")
