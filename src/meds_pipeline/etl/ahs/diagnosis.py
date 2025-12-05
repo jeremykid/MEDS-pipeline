@@ -144,6 +144,37 @@ class AHSDiagnosis(ComponentETL):
         # Build MEDS-compliant diagnosis codes
         all_diagnoses['meds_code'] = all_diagnoses['diagnosis_code'].apply(self._build_diagnosis_code)
         
+        # Create 'value' column for diagnosis sequence number (string dtype)
+        # Priority: use existing sequence_num extracted from DXCODE columns
+        seq_candidates = ['sequence_num', 'seq_num', 'diag_seq', 'dx_sequence', 'seq']
+        found_seq = None
+        for col in seq_candidates:
+            if col in all_diagnoses.columns:
+                found_seq = col
+                break
+        
+        if found_seq:
+            # Convert existing sequence to string, preserve pd.NA for missing values
+            all_diagnoses['value'] = pd.to_numeric(
+                all_diagnoses[found_seq], 
+                errors='coerce'
+            ).astype('Int64').astype("string")
+        else:
+            # Derive sequence by grouping within each visit
+            # Use PATID + event_time as visit key
+            grp_keys = ['PATID', 'event_time']
+            
+            # Sort by visit and time for stable ordering
+            all_diagnoses = all_diagnoses.sort_values(grp_keys).reset_index(drop=True)
+            
+            # Generate sequence within each visit
+            all_diagnoses['value'] = (
+                all_diagnoses.groupby(grp_keys).cumcount() + 1
+            ).astype('Int64').astype("string")
+        
+        # Ensure value is string dtype
+        all_diagnoses['value'] = all_diagnoses['value'].astype("string")
+        
         # Create MEDS core structure
         out = pd.DataFrame({
             "subject_id": all_diagnoses["PATID"].astype(str),
@@ -151,6 +182,7 @@ class AHSDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "diagnosis_source": all_diagnoses["diagnosis_source"],
+            "value": all_diagnoses["value"],  # string dtype sequence number
         })
         
         # Filter out invalid records

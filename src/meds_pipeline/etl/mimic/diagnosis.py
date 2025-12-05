@@ -163,6 +163,55 @@ class MIMICDiagnosis(ComponentETL):
             axis=1
         )
         
+        # Create 'value' column for diagnosis sequence number (string dtype)
+        # Priority: use existing seq_num from diagnoses_icd if available
+        seq_candidates = ['seq_num', 'sequence_num', 'diag_seq', 'dx_sequence', 'seq']
+        found_seq = None
+        for col in seq_candidates:
+            if col in all_diagnoses.columns:
+                found_seq = col
+                break
+        
+        if found_seq:
+            # Convert existing sequence to string, preserve pd.NA for missing values
+            all_diagnoses['value'] = pd.to_numeric(
+                all_diagnoses[found_seq], 
+                errors='coerce'
+            ).astype('Int64').astype("string")
+        else:
+            # Derive sequence by grouping within each visit
+            # Use hadm_id for hospital, stay_id for ED
+            if 'hadm_id' in all_diagnoses.columns and 'stay_id' in all_diagnoses.columns:
+                # Create combined visit key
+                all_diagnoses['_visit_key'] = all_diagnoses['hadm_id'].fillna(
+                    all_diagnoses['stay_id']
+                ).astype(str)
+                grp_keys = ['subject_id', '_visit_key']
+            elif 'hadm_id' in all_diagnoses.columns:
+                grp_keys = ['subject_id', 'hadm_id']
+            elif 'stay_id' in all_diagnoses.columns:
+                grp_keys = ['subject_id', 'stay_id']
+            else:
+                grp_keys = ['subject_id', 'time_col']
+            
+            # Sort by visit and time for stable ordering
+            sort_cols = grp_keys.copy()
+            if 'time_col' in all_diagnoses.columns and 'time_col' not in sort_cols:
+                sort_cols.append('time_col')
+            all_diagnoses = all_diagnoses.sort_values(sort_cols).reset_index(drop=True)
+            
+            # Generate sequence within each visit
+            all_diagnoses['value'] = (
+                all_diagnoses.groupby(grp_keys).cumcount() + 1
+            ).astype('Int64').astype("string")
+            
+            # Clean up temporary column if created
+            if '_visit_key' in all_diagnoses.columns:
+                all_diagnoses = all_diagnoses.drop('_visit_key', axis=1)
+        
+        # Ensure value is string dtype
+        all_diagnoses['value'] = all_diagnoses['value'].astype("string")
+        
         # Create MEDS core structure
         out = pd.DataFrame({
             "subject_id": all_diagnoses["subject_id"].astype(str),
@@ -170,6 +219,7 @@ class MIMICDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "diagnosis_source": all_diagnoses["diagnosis_source"],
+            "value": all_diagnoses["value"],  # string dtype sequence number
         })
         
         # Filter out invalid records
