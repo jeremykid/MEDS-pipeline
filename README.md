@@ -7,16 +7,10 @@ MEDS pipeline for both MIMIC and AHS datasets
 
 ```bash
 # Test with MIMIC dataset (100 patients)
-python3 -m meds_pipeline.cli run --source mimic --components admissions --cfg mimic.yaml --max-patients 100
-
-# Full MIMIC dataset processing
-python3 -m meds_pipeline.cli run --source mimic --components admissions --cfg mimic.yaml
-
-# AHS dataset processing
-python3 -m meds_pipeline.cli run --source ahs --components admissions --cfg ahs.yaml
+python3 -m meds_pipeline.cli run --source mimic --components admissions,eds,diagnosis,procedures --cfg mimic.yaml --max-patients 100
 
 # AHS medicines component (100 patients)
-python3 -m meds_pipeline.cli run --source ahs --components medicines --cfg ahs.yaml --max-patients 100
+python3 -m meds_pipeline.cli run --source ahs --components admissions,eds,diagnosis,procedures --cfg ahs.yaml --max-patients 100
 
 # MIMIC with multiple components (100 patients, CORE format - default)
 PYTHONPATH=src python3 -m meds_pipeline.cli run --source mimic --components admissions,eds --cfg src/meds_pipeline/configs/mimic.yaml --max-patients 100 --progress
@@ -197,3 +191,10 @@ MEDS-pipeline/
 │           │   └── mimic_source.py
 └── tests/
 ```
+
+## Planned
+
+For MIMIC, Get Code.parquet, which has all dx, procedure, medicine's description
+Just check if we could find all exist code from Code.parquet
+
+For AHS, we should have ICD-10 CA Description, and CCI code csv file. 

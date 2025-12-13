@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 data/
 doc/
+src/resource/
 *.parquet
 *.csv
 .env

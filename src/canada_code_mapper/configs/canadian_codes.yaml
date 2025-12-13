@@ -1,0 +1,36 @@
+# Code Mapper Configuration
+# 
+# This file defines the mapping files for Canadian medical coding systems
+# (ICD-10-CA for diagnoses and CCI for procedures)
+
+mappers:
+  # ICD-10-CA (International Classification of Diseases, 10th Revision, Canadian version)
+  # Used for diagnosis codes in AHS data
+  icd10ca:
+    file_path: "data/mappings/icd10ca_descriptions.txt"
+    code_column: "code"
+    description_column: "description"
+    delimiter: "|"
+    encoding: "utf-8"
+    code_type: "diagnosis"
+    
+  # CCI (Canadian Classification of Health Interventions)
+  # Used for procedure codes in AHS data
+  cci:
+    file_path: "data/mappings/cci_descriptions.txt"
+    code_column: "code"
+    description_column: "description"
+    delimiter: ","
+    encoding: "utf-8"
+    code_type: "procedure"
+
+# Base directory for relative paths (optional)
+base_dir: "."
+
+# Optional: Preload mappers on initialization
+preload: true
+
+# Optional: Cache settings
+cache:
+  enabled: true
+  max_size: 100000  # Maximum number of cached lookups

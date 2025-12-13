@@ -73,8 +73,12 @@ def run(source, components, cfg, base, max_patients, progress):
     
     # Split large DataFrame into smaller chunks
     chunk_size = 100000  # Adjust this based on your needs
-    
-    if total_rows <= chunk_size:
+    # If only a single component was requested, always write a single file named {source}_{component}_meds_core.parquet
+    if len(comp_list) == 1:
+        output_path = output_dir / f"{source}_{comp_list[0]}_meds_core.parquet"
+        df.to_parquet(output_path, index=False)
+        click.echo(f"Saved to {output_path}: {total_rows:,} rows")
+    elif total_rows <= chunk_size:
         # Single file if small enough
         output_path = output_dir / f"{source}_meds_core.parquet"
         df.to_parquet(output_path, index=False)
@@ -92,7 +96,8 @@ def run(source, components, cfg, base, max_patients, progress):
             end_idx = min((i + 1) * chunk_size, total_rows)
             chunk_df = df.iloc[start_idx:end_idx]
             
-            output_path = output_dir / f"{source}_meds_core_part_{i+1:03d}.parquet"
+            pad = max(3, len(str(num_chunks)))
+            output_path = output_dir / f"{source}_meds_core_part_{i+1:0{pad}d}.parquet"
             chunk_df.to_parquet(output_path, index=False)
             if not progress:  # Only show individual chunk messages if no progress bar
                 click.echo(f"Saved chunk {i+1}/{num_chunks} to {output_path}: {len(chunk_df):,} rows")
