@@ -9,6 +9,25 @@ import pandas as pd
 from ..base import ComponentETL
 from ..registry import register
 import pyreadstat
+# TODO 关于 medicine，我想和其他 component 一样，不用 plus 这个function 只需要 run_core 然后 code 只要 
+# Code 这种格式 MEDICINE//ATC//{SUPP_DRUG_ATC_CODE}  可以吗？
+# example of PIN
+'''
+   PATID  DSPN_DATE  DSPN_AMT_QTY DSPN_AMT_UNT_MSR_CD  DSPN_DAY_SUPPLY_QTY  \
+0    1.0 2008-04-01          60.0                 TAB                 30.0   
+1    1.0 2008-04-01          60.0                 TAB                 30.0   
+2    1.0 2008-04-01          60.0                 TAB                 30.0   
+3    1.0 2008-04-01          60.0                 TAB                 30.0   
+4    1.0 2008-04-18          30.0                 TAB                 30.0   
+
+   DRUG_DIN SUPP_DRUG_ATC_CODE  
+0  02212331            A02BA02  
+1  02242681            B01AA03  
+2  02242681            B01AA03  
+3  02212331            A02BA02  
+4  02010909            G04CB01  
+'''
+
 
 @register("medicines")
 class AHSMedicines(ComponentETL):
@@ -19,36 +38,18 @@ class AHSMedicines(ComponentETL):
     Expected raw columns (best-effort; code is defensive to missing columns):
       - PATID
       - DSPN_DATE
-      - DSPN_AMT_QTY, DSPN_AMT_UNT_MSR_CD
-      - DSPN_DAY_SUPPLY_QTY
-      - DRUG_DIN (preferred code)
-      - SUPP_DRUG_ATC_CODE (fallback code; also useful for value_text)
-      - (Optional) INST / SITE, etc.
+      - SUPP_DRUG_ATC_CODE (required for code generation)
+      - DSPN_AMT_QTY, DSPN_AMT_UNT_MSR_CD (optional, for value_num/unit)
+      - DSPN_DAY_SUPPLY_QTY (optional, for value_text)
+      - INST (optional, for site)
+    
+    Output format:
+      - code: MEDICINE//ATC//{SUPP_DRUG_ATC_CODE}
+      - code_system: ATC
+      - Rows without valid SUPP_DRUG_ATC_CODE are dropped
     """
 
     # ---------------------------- helpers ------------------------------------- #
-    @staticmethod
-    def _pick_code_and_system(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Choose code/code_system for each row:
-          - If DRUG_DIN present & non-empty → code=DRUG_DIN, code_system='DIN'
-          - Else if SUPP_DRUG_ATC_CODE present → code=ATC, code_system='ATC'
-          - Else mark as empty (later dropped)
-        """
-        din = df["DRUG_DIN"].astype(str).str.strip() if "DRUG_DIN" in df.columns else pd.Series("", index=df.index)
-        atc = (
-            df["SUPP_DRUG_ATC_CODE"].astype(str).str.strip()
-            if "SUPP_DRUG_ATC_CODE" in df.columns
-            else pd.Series("", index=df.index)
-        )
-
-        use_din = din.notna() & (din != "") & (din.str.lower() != "nan")
-        use_atc = (~use_din) & atc.notna() & (atc != "") & (atc.str.lower() != "nan")
-
-        code = np.where(use_din, din, np.where(use_atc, atc, ""))
-        code_system = np.where(use_din, "DIN", np.where(use_atc, "ATC", ""))
-
-        return pd.DataFrame({"code": code, "code_system": code_system})
 
     @staticmethod
     def _assemble_value_text(df: pd.DataFrame) -> pd.Series:
@@ -82,100 +83,65 @@ class AHSMedicines(ComponentETL):
 
     # ------------------------------ Core -------------------------------------- #
     def run_core(self) -> pd.DataFrame:
-        path = self.cfg["raw_paths"]["medication"]
-        # df = pd.read_csv(path)
+        """
+        Converts AHS PIN medication data to MEDS core format.
+        Only uses SUPP_DRUG_ATC_CODE for code generation (MEDICINE//ATC//{code}).
+        Rows without valid ATC codes are dropped.
+        """
+        path = self.cfg["raw_paths"]["medicines"]
         df, meta = pyreadstat.read_sas7bdat(path, output_format="pandas")
-        # subject_id
+        
+        # Validate required columns
         if "PATID" not in df.columns:
-            print (df.columns.tolist())
+            print(df.columns.tolist())
             raise KeyError("AHS PIN expects column `PATID`")
-        subject = df["PATID"].astype("Int64").astype(str)
-
-        # time
         if "DSPN_DATE" not in df.columns:
             raise KeyError("AHS PIN expects column `DSPN_DATE`")
+        
+        # subject_id
+        subject = df["PATID"].astype("Int64").astype(str)
+        
+        # time
         time = pd.to_datetime(df["DSPN_DATE"], errors="coerce")
-
-        # code & code_system
-        code_block = self._pick_code_and_system(df)
-
-        out = pd.DataFrame(
-            {
-                "subject_id": subject,
-                "time": time,
-                "event_type": "medication.order",
-                "code": code_block["code"],
-                "code_system": code_block["code_system"],
-            }
-        )
-
+        
+        # code: MEDICINE//ATC//{SUPP_DRUG_ATC_CODE}
+        atc = df.get("SUPP_DRUG_ATC_CODE", pd.Series([""] * len(df))).astype(str).str.strip()
+        valid_atc = atc.notna() & (atc != "") & (atc.str.lower() != "nan")
+        code = ("MEDICINE//ATC//" + atc).where(valid_atc, "")
+        
+        # Build core DataFrame
+        out = pd.DataFrame({
+            "subject_id": subject,
+            "time": time,
+            "event_type": "medication.dispense",
+            "code": code,
+            "code_system": "ATC",
+        })
+        
+        # Optional: value_num (medication amount)
+        if "DSPN_AMT_QTY" in df.columns:
+            out["value_num"] = pd.to_numeric(df["DSPN_AMT_QTY"], errors="coerce")
+        
+        # Optional: unit (amount unit measure)
+        if "DSPN_AMT_UNT_MSR_CD" in df.columns:
+            out["unit"] = df["DSPN_AMT_UNT_MSR_CD"].astype(str).str.strip()
+        
+        # Optional: value_text (human-readable metadata)
+        out["value_text"] = self._assemble_value_text(df)
+        
+        # Metadata
+        out["source_table"] = "PIN"
+        out["provenance_id"] = (out.index.astype(int) + 1).astype(str)  # 1-based row index
+        
+        # Optional: site (institution)
+        if "INST" in df.columns:
+            out["site"] = df["INST"].astype(str).str.strip()
+        
         # Drop unusable rows (no subject/time/code)
         out = out.dropna(subset=["time"])
         out = out[out["subject_id"].astype(str).str.strip() != ""]
         out = out[out["code"].astype(str).str.strip() != ""].reset_index(drop=True)
+        
         return out
 
-    # ------------------------------ Plus -------------------------------------- #
-    def run_plus(self) -> pd.DataFrame:
-        path = self.cfg["raw_paths"]["medication"]
-        # df = pd.read_csv(path)
-        df, meta = pyreadstat.read_sas7bdat(path, output_format="pandas")
-        
-        # Apply the same filtering logic as run_core to keep data aligned
-        if "PATID" not in df.columns:
-            print(df.columns.tolist())
-            raise KeyError("AHS PIN expects column `PATID`")
-        subject = df["PATID"].astype("Int64").astype(str)
 
-        # time
-        if "DSPN_DATE" not in df.columns:
-            raise KeyError("AHS PIN expects column `DSPN_DATE`")
-        time = pd.to_datetime(df["DSPN_DATE"], errors="coerce")
-
-        # code & code_system
-        code_block = self._pick_code_and_system(df)
-
-        # Create core structure
-        core = pd.DataFrame(
-            {
-                "subject_id": subject,
-                "time": time,
-                "event_type": "medication.order",
-                "code": code_block["code"],
-                "code_system": code_block["code_system"],
-            }
-        )
-
-        # Apply the same filtering as run_core to keep indices aligned
-        valid_mask = (
-            core["time"].notna() &
-            (core["subject_id"].astype(str).str.strip() != "") &
-            (core["code"].astype(str).str.strip() != "")
-        )
-        
-        # Filter both core and original df to maintain alignment
-        core = core[valid_mask].reset_index(drop=True)
-        df_filtered = df[valid_mask].reset_index(drop=True)
-
-        # Now we can safely use the aligned indices
-        # numeric quantity (value_num)
-        if "DSPN_AMT_QTY" in df_filtered.columns:
-            core["value_num"] = pd.to_numeric(df_filtered["DSPN_AMT_QTY"], errors="coerce")
-
-        # unit
-        if "DSPN_AMT_UNT_MSR_CD" in df_filtered.columns:
-            core["unit"] = df_filtered["DSPN_AMT_UNT_MSR_CD"].astype(str).str.strip()
-
-        # value_text (day supply + ATC if available)
-        core["value_text"] = self._assemble_value_text(df_filtered)
-
-        # provenance & source
-        core["source_table"] = "PIN"
-        # If there is an explicit row identifier in your data, replace this with that column.
-        core["provenance_id"] = (core.index.astype(int) + 1).astype(str)  # 1-based row index as fallback
-
-        # (Optional) site column if available in your feed, e.g., INST
-        if "INST" in df_filtered.columns:
-            core["site"] = df_filtered["INST"].astype(str).str.strip()
-
-        return core

@@ -9,6 +9,40 @@ import pandas as pd
 from ..base import ComponentETL
 from ..registry import register
 
+# TODO 关于 mimic medicine，我想和其他 component 一样，不用 plus 这个function 只需要 run_core 然后 code 只要 
+# Code 这种格式 MEDICINE//NDC//{ndc}  可以吗？
+# 在 hosp/prescriptions/ 这个数据库里 
+'''
+  pre_df = pd.read_csv("/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz", compression='gzip')
+Index(['subject_id', 'hadm_id', 'pharmacy_id', 'poe_id', 'poe_seq',
+       'order_provider_id', 'starttime', 'stoptime', 'drug_type', 'drug',
+       'formulary_drug_cd', 'gsn', 'ndc', 'prod_strength', 'form_rx',
+       'dose_val_rx', 'dose_unit_rx', 'form_val_disp', 'form_unit_disp',
+       'doses_per_24_hrs', 'route'],
+      dtype='object')
+   subject_id   hadm_id  pharmacy_id       poe_id  poe_seq order_provider_id  \
+0    10000032  22595853     12775705  10000032-55     55.0            P85UQ1   
+1    10000032  22595853     18415984  10000032-42     42.0            P23SJA   
+2    10000032  22595853     23637373  10000032-35     35.0            P23SJA   
+3    10000032  22595853     26862314  10000032-41     41.0            P23SJA   
+4    10000032  22595853     30740602  10000032-27     27.0            P23SJA   
+
+             starttime             stoptime drug_type  \
+0  2180-05-08 08:00:00  2180-05-07 22:00:00      MAIN   
+1  2180-05-07 02:00:00  2180-05-07 22:00:00      MAIN   
+2  2180-05-07 01:00:00  2180-05-07 09:00:00      MAIN   
+3  2180-05-07 01:00:00  2180-05-07 01:00:00      MAIN   
+4  2180-05-07 00:00:00  2180-05-07 22:00:00      MAIN   
+
+                          drug  ...     gsn           ndc    prod_strength  \
+0                   Furosemide  ...  008209  5.107901e+10      40mg Tablet   
+1      Ipratropium Bromide Neb  ...  021700  4.879801e+08       2.5mL Vial   
+2                   Furosemide  ...  008208  5.107901e+10      20mg Tablet   
+3           Potassium Chloride  ...  001275  2.450041e+08  10mEq ER Tablet   
+...
+3              1.0     PO  
+4              3.0     IV  
+'''
 @register("medicines")
 class MIMICMedicines(ComponentETL):
     """
@@ -17,34 +51,55 @@ class MIMICMedicines(ComponentETL):
 
     Expected raw columns (best-effort; code handles missing columns gracefully):
       - subject_id, hadm_id
-      - starttime, stoptime (we use starttime; no stop event here)
-      - ndc (preferred code) or drug (fallback)
-      - dose_val_rx, dose_unit_rx, route, frequency
-      - pharmacy_id or row_id (used as provenance_id when available)
+      - starttime (required for time)
+      - ndc (required for code generation)
+      - dose_val_rx, dose_unit_rx, route, frequency (optional, for metadata)
+      - pharmacy_id (optional, used as provenance_id when available)
+    
+    Output format:
+      - code: MEDICINE//NDC//{ndc}
+      - code_system: NDC
+      - Rows without valid NDC are dropped
     """
 
     # ---- helpers ----------------------------------------------------------------
     @staticmethod
+    def _normalize_ndc(ndc_series: pd.Series) -> pd.Series:
+        """
+        Normalize NDC codes to avoid scientific notation issues.
+        Converts numeric NDC values (like 5.107901e+10) to integer strings.
+        """
+        def _norm_ndc(x):
+            if pd.isna(x):
+                return ""
+            try:
+                # Try to convert to float first, then to int if it's integer-like
+                xf = float(x)
+                if xf.is_integer():
+                    return str(int(xf))
+                return str(int(xf))  # Force to int even if has decimals
+            except (ValueError, OverflowError):
+                # If conversion fails, just stringify
+                return str(x).strip()
+        
+        return ndc_series.apply(_norm_ndc).astype(str).str.strip()
+
+    @staticmethod
     def _pick_code_and_system(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Pick `code` and `code_system`:
-          - If `ndc` available and not null/empty -> code=ndc, code_system='NDC'
-          - Else -> code=drug (string), code_system='LOCAL'
+        Only use NDC. Return code formatted as MEDICINE//NDC//{ndc} and code_system='NDC'.
+        Missing/empty NDC -> empty string (will be dropped later).
         """
-        ndc_exists = "ndc" in df.columns
-        if ndc_exists:
-            ndc_clean = df["ndc"].astype(str).str.strip()
-            use_ndc = ndc_clean.notna() & (ndc_clean != "") & (ndc_clean.str.lower() != "nan")
+        if "ndc" not in df.columns:
+            ndc_series = pd.Series([""] * len(df), index=df.index)
         else:
-            use_ndc = pd.Series(False, index=df.index)
+            ndc_series = MIMICMedicines._normalize_ndc(df["ndc"])
+            ndc_series = ndc_series.where(~ndc_series.isin(["", "nan", "None", "NaN"]), "")
 
-        drug_series = df["drug"].astype(str).str.strip() if "drug" in df.columns else pd.Series("", index=df.index)
+        code = ndc_series.apply(lambda c: f"MEDICINE//NDC//{c}" if c != "" else "")
+        code_system = np.where(code != "", "NDC", "")
 
-        code = np.where(use_ndc, ndc_clean, drug_series)
-        code_system = np.where(use_ndc, "NDC", "LOCAL")
-
-        out = pd.DataFrame({"code": code, "code_system": code_system})
-        return out
+        return pd.DataFrame({"code": code, "code_system": code_system}, index=df.index)
 
     @staticmethod
     def _assemble_value_text(df: pd.DataFrame) -> pd.Series:
@@ -84,82 +139,70 @@ class MIMICMedicines(ComponentETL):
         joined = stacked.apply(lambda r: " | ".join([x for x in r.tolist() if isinstance(x, str)]) if r.notna().any() else "", axis=1)
         return joined
 
-    # ---- core/plus --------------------------------------------------------------
+    # ---- core --------------------------------------------------------------
     def run_core(self) -> pd.DataFrame:
-        path = self.cfg["raw_paths"]["medication"]
+        """
+        Converts MIMIC-IV hosp.prescriptions to MEDS core format.
+        Only uses NDC for code generation (MEDICINE//NDC//{ndc}).
+        Rows without valid NDC codes are dropped.
+        Uses only starttime (ignores stoptime).
+        """
+        path = self.cfg["raw_paths"]["medicines"]
         df = self._read_csv_with_progress(path, "Loading medication data")
 
-        # time: prefer starttime; fallback to ordertime if present
-        time_col = "starttime" if "starttime" in df.columns else ("ordertime" if "ordertime" in df.columns else None)
-        if time_col is None:
-            raise KeyError("No `starttime`/`ordertime` column found in hosp.prescriptions")
+        # Validate required columns
+        if "starttime" not in df.columns:
+            raise KeyError("No `starttime` column found in hosp.prescriptions")
 
-        time = pd.to_datetime(df[time_col], errors="coerce")
+        # time: only use starttime
+        time = pd.to_datetime(df["starttime"], errors="coerce")
 
+        # code: MEDICINE//NDC//{ndc}
         code_block = self._pick_code_and_system(df)
 
-        out = pd.DataFrame(
-            {
-                "subject_id": df["subject_id"],
-                "time": time,
-                "event_type": "medication.order",
-                "code": code_block["code"],
-                "code_system": code_block["code_system"],
-            }
-        )
+        # Build core DataFrame
+        out = pd.DataFrame({
+            "subject_id": df["subject_id"],
+            "time": time,
+            "event_type": "medication.order",
+            "code": code_block["code"],
+            "code_system": code_block["code_system"],
+        })
 
-        # Drop rows without time or subject_id/code
+        # Drop rows without time or subject_id or code BEFORE adding optional fields
         out = out.dropna(subset=["subject_id", "time"])
-        out = out[out["code"].astype(str).str.strip() != ""].reset_index(drop=True)
+        out = out[out["code"].astype(str).str.strip() != ""]
+        
+        # Now filter df to match the valid indices
+        valid_indices = out.index
+        df_valid = df.loc[valid_indices]
+        out = out.reset_index(drop=True)
+        df_valid = df_valid.reset_index(drop=True)
+
+        # Optional: encounter_id (hadm_id)
+        if "hadm_id" in df_valid.columns:
+            out["encounter_id"] = df_valid["hadm_id"].astype(str)
+
+        # Optional: value_num (dose quantity)
+        if "dose_val_rx" in df_valid.columns:
+            out["value_num"] = pd.to_numeric(df_valid["dose_val_rx"], errors="coerce")
+
+        # Optional: unit (dose unit)
+        if "dose_unit_rx" in df_valid.columns:
+            out["unit"] = df_valid["dose_unit_rx"].astype(str).str.strip()
+
+        # Optional: value_text (human-readable metadata)
+        out["value_text"] = self._assemble_value_text(df_valid)
+
+        # Metadata
+        out["source_table"] = "hosp.prescriptions"
+        if "pharmacy_id" in df_valid.columns:
+            out["provenance_id"] = df_valid["pharmacy_id"].astype(str)
+        elif "row_id" in df_valid.columns:
+            out["provenance_id"] = df_valid["row_id"].astype(str)
+        else:
+            out["provenance_id"] = (out.index.astype(int) + 1).astype(str)
+
         return out
 
-    def run_plus(self) -> pd.DataFrame:
-        path = self.cfg["raw_paths"]["medication"]
-        df = self._read_csv_with_progress(path, "Loading medication data for PLUS format")
 
-        # Generate core data without reloading
-        # time: prefer starttime; fallback to ordertime if present
-        time_col = "starttime" if "starttime" in df.columns else ("ordertime" if "ordertime" in df.columns else None)
-        if time_col is None:
-            raise KeyError("No `starttime`/`ordertime` column found in hosp.prescriptions")
-
-        time = pd.to_datetime(df[time_col], errors="coerce")
-        code_block = self._pick_code_and_system(df)
-
-        core = pd.DataFrame(
-            {
-                "subject_id": df["subject_id"],
-                "time": time,
-                "event_type": "medication.order",
-                "code": code_block["code"],
-                "code_system": code_block["code_system"],
-            }
-        )
-
-        # Drop rows without time or subject_id/code
-        core = core.dropna(subset=["subject_id", "time"])
-        core = core[core["code"].astype(str).str.strip() != ""].reset_index(drop=True)
-
-        # encounter_id
-        if "hadm_id" in df.columns:
-            core["encounter_id"] = df.loc[core.index, "hadm_id"].astype(str)
-
-        # numeric dose & unit
-        if "dose_val_rx" in df.columns:
-            # Try parse numeric; non-numeric becomes NaN
-            core["value_num"] = pd.to_numeric(df.loc[core.index, "dose_val_rx"], errors="coerce")
-
-        if "dose_unit_rx" in df.columns:
-            core["unit"] = df.loc[core.index, "dose_unit_rx"].astype(str).str.strip()
-
-        # value_text = "dose unit | route | frequency"
-        core["value_text"] = self._assemble_value_text(df.loc[core.index])
-
-        # provenance/source
-        core["source_table"] = "hosp.prescriptions"
-        if "pharmacy_id" in df.columns:
-            core["provenance_id"] = df.loc[core.index, "pharmacy_id"].astype(str)
-        elif "row_id" in df.columns:
-            core["provenance_id"] = df.loc[core.index, "row_id"].astype(str)
-
-        return core

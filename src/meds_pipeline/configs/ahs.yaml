@@ -7,7 +7,7 @@ raw_paths:
   procedures_icd:       "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
   # labtests:             "/data/padmalab_external/special_project/AHS_Data_Release_2/"
   death:                "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_death_20251124.pickle"
-  medication:           "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_pin_20211105.sas7bdat"
+  medicines:            "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_pin_20211105.sas7bdat"
   icu:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
   ecg:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_ecg_20211105_df.pickle"
   vital_status:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_vital_20211105.sas7bdat"

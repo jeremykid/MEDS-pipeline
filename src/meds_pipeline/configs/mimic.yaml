@@ -6,7 +6,7 @@ raw_paths:
   ed_diagnoses_icd:     "/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ed/2.2/ed/diagnosis.csv.gz"
   procedures_icd:       "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/procedures_icd.csv.gz"
   labtests:             "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/labevents.csv.gz"
-  medication:           "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz"
+  medicines:            "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz"
   icu:                  "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/icu/icustays.csv.gz"
   d_icd_diagnoses:      "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/d_icd_diagnoses.csv.gz"
   diagnoses_icd:        "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/diagnoses_icd.csv.gz"
