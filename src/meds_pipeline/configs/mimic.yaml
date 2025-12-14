@@ -11,7 +11,7 @@ raw_paths:
   d_icd_diagnoses:      "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/d_icd_diagnoses.csv.gz"
   diagnoses_icd:        "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/diagnoses_icd.csv.gz"
   ecgs:                 '/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ecg/1.0/record_list.csv'
-  patients:            "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/patients.csv.gz"
+  demographics:         "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/patients.csv.gz"
 keys:
   subject_id: "subject_id"
   encounter_id: "hadm_id"
