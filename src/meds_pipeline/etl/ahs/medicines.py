@@ -55,21 +55,29 @@ class AHSMedicines(ComponentETL):
     def _assemble_value_text(df: pd.DataFrame) -> pd.Series:
         """
         Human-readable text for auditing, e.g.:
-          "day_supply=30 | ATC=A02BA02"
+          "amt=60 | unit=TAB | day_supply=30"
         Only includes available, non-empty parts.
         """
         parts: List[pd.Series] = []
 
+        # amount quantity
+        if "DSPN_AMT_QTY" in df.columns:
+            amt = pd.to_numeric(df["DSPN_AMT_QTY"], errors="coerce")
+            amt_txt = ("amt=" + amt.astype(str)).where(amt.notna(), "")
+            parts.append(amt_txt)
+
+        # amount unit
+        if "DSPN_AMT_UNT_MSR_CD" in df.columns:
+            unit = df["DSPN_AMT_UNT_MSR_CD"].astype(str).str.strip()
+            unit = unit.where(unit.notna() & (unit != "") & (unit.str.lower() != "nan"), "")
+            unit_txt = ("unit=" + unit).where(unit != "", "")
+            parts.append(unit_txt)
+
+        # day supply
         if "DSPN_DAY_SUPPLY_QTY" in df.columns:
             ds = df["DSPN_DAY_SUPPLY_QTY"]
             ds_txt = ("day_supply=" + ds.astype("Int64").astype(str)).where(ds.notna(), "")
             parts.append(ds_txt)
-
-        if "SUPP_DRUG_ATC_CODE" in df.columns:
-            atc = df["SUPP_DRUG_ATC_CODE"].astype(str).str.strip()
-            atc = atc.where(atc.notna() & (atc != "") & (atc.str.lower() != "nan"), "")
-            atc_txt = ("ATC=" + atc).where(atc != "", "")
-            parts.append(atc_txt)
 
         if not parts:
             return pd.Series([""] * len(df), index=df.index)

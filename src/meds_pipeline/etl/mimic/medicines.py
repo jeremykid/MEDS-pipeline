@@ -104,40 +104,96 @@ class MIMICMedicines(ComponentETL):
     @staticmethod
     def _assemble_value_text(df: pd.DataFrame) -> pd.Series:
         """
-        Join free-text attributes for readability/auditing:
-          "dose_val_rx dose_unit_rx | route | frequency"
-        Only include parts that exist & are non-empty.
+        Join free-text & numeric attributes for readability/auditing. Produce a
+        compact, human-readable summary containing as much useful metadata as possible.
+
+        Examples:
+          "dose=10 mg | form=1 tablet | strength=40mg Tablet | route=IV | freq=3x/day | ndc=51079010000"
+
+        Rules:
+          - Only include fields that exist and are non-empty.
+          - Skip values that are null/empty/"nan"/"None".
+          - Keep input index; return pd.Series of strings.
         """
         parts: List[pd.Series] = []
-        dose_val = df["dose_val_rx"].astype(str).str.strip() if "dose_val_rx" in df.columns else None
-        dose_unit = df["dose_unit_rx"].astype(str).str.strip() if "dose_unit_rx" in df.columns else None
-        route = df["route"].astype(str).str.strip() if "route" in df.columns else None
-        freq = df["frequency"].astype(str).str.strip() if "frequency" in df.columns else None
 
-        # dose part: "10 mg"
+        def _clean(col: str) -> pd.Series:
+            s = df[col].astype(str).str.strip()
+            s = s.where(~s.isin(["", "nan", "None", "NaN"]), np.nan)
+            return s
+
+        # dose value + unit -> "dose=10 mg"
+        dose_val = _clean("dose_val_rx") if "dose_val_rx" in df.columns else None
+        dose_unit = _clean("dose_unit_rx") if "dose_unit_rx" in df.columns else None
         if dose_val is not None and dose_unit is not None:
-            dose_pair = (dose_val.replace("nan", "").replace("", np.nan).fillna(""))
-            unit_pair = (dose_unit.replace("nan", "").replace("", np.nan).fillna(""))
-            dose_text = (dose_pair + " " + unit_pair).str.strip()
-            dose_text = dose_text.replace("", np.nan).fillna("")
-            parts.append(dose_text)
+            dose_comb = (dose_val.fillna("") + " " + dose_unit.fillna("")).str.strip()
+            dose_comb = dose_comb.where(dose_comb != "", np.nan)
+            parts.append(("dose=" + dose_comb).where(dose_comb.notna(), ""))
         elif dose_val is not None:
-            parts.append(dose_val.replace("nan", "").fillna(""))
+            parts.append(("dose=" + dose_val).where(dose_val.notna(), ""))
+        elif dose_unit is not None:
+            parts.append(("dose_unit=" + dose_unit).where(dose_unit.notna(), ""))
 
-        if route is not None:
-            parts.append(route.replace("nan", "").fillna(""))
+        # form display (dispensed quantity + unit) -> "form=1 tablet"
+        if "form_val_disp" in df.columns or "form_unit_disp" in df.columns:
+            form_val = _clean("form_val_disp") if "form_val_disp" in df.columns else None
+            form_unit = _clean("form_unit_disp") if "form_unit_disp" in df.columns else None
+            if form_val is not None and form_unit is not None:
+                form_comb = (form_val.fillna("") + " " + form_unit.fillna("")).str.strip()
+                form_comb = form_comb.where(form_comb != "", np.nan)
+                parts.append(("form=" + form_comb).where(form_comb.notna(), ""))
+            elif form_val is not None:
+                parts.append(("form=" + form_val).where(form_val.notna(), ""))
+            elif form_unit is not None:
+                parts.append(("form_unit=" + form_unit).where(form_unit.notna(), ""))
 
-        if freq is not None:
-            parts.append(freq.replace("nan", "").fillna(""))
+        # product strength (free text)
+        if "prod_strength" in df.columns:
+            ps = _clean("prod_strength")
+            parts.append(("strength=" + ps).where(ps.notna(), ""))
+
+        # frequency / doses per 24 hrs
+        if "frequency" in df.columns:
+            freq = _clean("frequency")
+            parts.append(("freq=" + freq).where(freq.notna(), ""))
+        if "doses_per_24_hrs" in df.columns:
+            d24 = _clean("doses_per_24_hrs")
+            parts.append(("doses_per_24hrs=" + d24).where(d24.notna(), ""))
+
+        # route
+        if "route" in df.columns:
+            route = _clean("route")
+            parts.append(("route=" + route).where(route.notna(), ""))
+
+        # drug free-text
+        if "drug" in df.columns:
+            drug = _clean("drug")
+            parts.append(("drug=" + drug).where(drug.notna(), ""))
+
+        # formulary code / gsn
+        if "formulary_drug_cd" in df.columns:
+            fcd = _clean("formulary_drug_cd")
+            parts.append(("formulary=" + fcd).where(fcd.notna(), ""))
+        if "gsn" in df.columns:
+            gsn = _clean("gsn")
+            parts.append(("gsn=" + gsn).where(gsn.notna(), ""))
+
+        # normalized ndc (use existing normalizer)
+        # if "ndc" in df.columns:
+        #     ndc_norm = MIMICMedicines._normalize_ndc(df["ndc"])
+        #     ndc_norm = ndc_norm.replace({"": np.nan})
+        #     parts.append(("ndc=" + ndc_norm).where(ndc_norm.notna(), ""))
 
         if not parts:
             return pd.Series([""] * len(df), index=df.index)
 
-        # Join using " | ", but skip empty chunks
-        stacked = pd.concat(parts, axis=1)
-        stacked = stacked.replace("", np.nan)
-        joined = stacked.apply(lambda r: " | ".join([x for x in r.tolist() if isinstance(x, str)]) if r.notna().any() else "", axis=1)
-        return joined
+        # Join using " | ", skipping empty chunks
+        stacked = pd.concat(parts, axis=1).replace("", np.nan)
+        joined = stacked.apply(
+            lambda r: " | ".join([x for x in r.tolist() if isinstance(x, str) and x.strip() != ""]) if r.notna().any() else "",
+            axis=1,
+        )
+        return joined    
 
     # ---- core --------------------------------------------------------------
     def run_core(self) -> pd.DataFrame:

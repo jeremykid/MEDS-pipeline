@@ -97,83 +97,30 @@ class AHSECGs(ComponentETL):
         # Clean ECG IDs (remove N'...' wrapper)
         clean_ecg_ids = self._clean_ecg_id(df["ecgId"])
         
-        # Create core MEDS structure
-        out = pd.DataFrame({
-            "subject_id": df["PATID"].astype(str),
-            "time": pd.to_datetime(df["dateAcquired"], errors="coerce"),
-            "event_type": "ecg_recording",
-            "code": "ECG",  # Standard code for ECG recordings
-            "code_system": "AHS_ECG",
-        })
-        
-        # Filter out invalid records
-        out = out.dropna(subset=["subject_id", "time"])
-        out = out[out["subject_id"].astype(str).str.strip() != ""].reset_index(drop=True)
-        return out
-    
-    def run_plus(self) -> pd.DataFrame:
-        df = self._load_ecg_data()
-        
-        # Get core data with same filtering
-        core = self.run_core().reset_index(drop=True)
-        
-        # Clean ECG IDs
-        clean_ecg_ids = self._clean_ecg_id(df["ecgId"])
-        
-        # Apply same filtering to original df to maintain alignment
+        # Build valid mask for filtering
         valid_mask = (
             df["PATID"].notna() &
             pd.to_datetime(df["dateAcquired"], errors="coerce").notna() &
             (df["PATID"].astype(str).str.strip() != "")
         )
+        
+        # Apply filtering to original dataframe and cleaned IDs
         df_filtered = df[valid_mask].reset_index(drop=True)
         clean_ecg_ids_filtered = clean_ecg_ids[valid_mask].reset_index(drop=True)
         
-        # Add ECG-specific metadata for feature extraction
-        if "ecgId" in df_filtered.columns:
-            core["ecg_id"] = clean_ecg_ids_filtered.astype(str)
-            
-        # Store clean ECG ID as file path identifier for waveform feature extraction
-        core["ecg_file_path"] = clean_ecg_ids_filtered.astype(str)
+        # Create core MEDS structure with value_text containing ECG ID
+        out = pd.DataFrame({
+            "subject_id": df_filtered["PATID"].astype(str),
+            "time": pd.to_datetime(df_filtered["dateAcquired"], errors="coerce"),
+            "event_type": "ECG",
+            "code": "ECG//WAVEFORM",  # Standard code for ECG recordings
+            "code_system": "AHS_ECG",
+            "value_text": clean_ecg_ids_filtered.astype(str),  # ECG ID for waveform extraction
+        })
         
-        if "dateConfirmed" in df_filtered.columns:
-            core["date_confirmed"] = pd.to_datetime(df_filtered["dateConfirmed"], errors="coerce")
-            
-        # Add value_text with other ECG metadata for auditing (excluding ecg_id)
-        core["value_text"] = self._assemble_ecg_metadata(df_filtered, clean_ecg_ids_filtered)
+        # Add provenance tracking
+        out["source_table"] = "AHS_ECG"
+        out["provenance_id"] = (out.index.astype(int) + 1).astype(str)
         
-        # Provenance tracking
-        core["source_table"] = "AHS_ECG"
-        core["provenance_id"] = (core.index.astype(int) + 1).astype(str)
-        
-        return core
-    
-    @staticmethod
-    def _assemble_ecg_metadata(df: pd.DataFrame, clean_ecg_ids: pd.Series) -> pd.Series:
-        """
-        Create human-readable metadata for ECG records (excluding ecg_id), e.g.:
-        "patid=219126 | date_confirmed=2007-07-27 21:59:36"
-        ECG ID is stored separately in ecg_file_path field for feature extraction.
-        """
-        parts = []
-        
-        if "PATID" in df.columns:
-            patid_txt = "patid=" + df["PATID"].astype(str)
-            parts.append(patid_txt)
-            
-        if "dateConfirmed" in df.columns:
-            confirmed_txt = "date_confirmed=" + pd.to_datetime(df["dateConfirmed"], errors="coerce").dt.strftime('%Y-%m-%d %H:%M:%S')
-            parts.append(confirmed_txt)
-            
-        # Note: ecg_id is intentionally excluded and stored separately in ecg_file_path
-            
-        if not parts:
-            return pd.Series([""] * len(df), index=df.index)
-            
-        # Combine all parts with " | " separator
-        combined = pd.concat(parts, axis=1)
-        metadata = combined.apply(
-            lambda row: " | ".join([str(x) for x in row.tolist() if pd.notna(x) and str(x).strip() and str(x) != 'NaT']),
-            axis=1
-        )
-        return metadata
+        return out
+

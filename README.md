@@ -10,7 +10,7 @@ MEDS pipeline for both MIMIC and AHS datasets
 python3 -m meds_pipeline.cli run --source mimic --components admissions,eds,diagnosis,procedures,medicines,demographics --cfg mimic.yaml --max-patients 100
 
 # AHS medicines component (100 patients)
-python3 -m meds_pipeline.cli run --source ahs --components admissions,eds,diagnosis,procedures,medicines,demographics --cfg ahs.yaml --max-patients 100
+python3 -m meds_pipeline.cli run --source ahs --components ecgs,admissions,eds,diagnosis,procedures,medicines,demographics --cfg ahs.yaml --max-patients 100
 
 # MIMIC with multiple components (100 patients, CORE format - default)
 PYTHONPATH=src python3 -m meds_pipeline.cli run --source mimic --components admissions,eds --cfg src/meds_pipeline/configs/mimic.yaml --max-patients 100 --progress
