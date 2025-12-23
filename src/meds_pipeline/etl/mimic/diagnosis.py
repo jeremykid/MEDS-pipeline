@@ -163,7 +163,7 @@ class MIMICDiagnosis(ComponentETL):
             axis=1
         )
         
-        # Create 'value' column for diagnosis sequence number (string dtype)
+        # Create 'value_num' column for diagnosis sequence number (string dtype)
         # Priority: use existing seq_num from diagnoses_icd if available
         seq_candidates = ['seq_num', 'sequence_num', 'diag_seq', 'dx_sequence', 'seq']
         found_seq = None
@@ -174,7 +174,7 @@ class MIMICDiagnosis(ComponentETL):
         
         if found_seq:
             # Convert existing sequence to string, preserve pd.NA for missing values
-            all_diagnoses['value'] = pd.to_numeric(
+            all_diagnoses['value_num'] = pd.to_numeric(
                 all_diagnoses[found_seq], 
                 errors='coerce'
             ).astype('Int64').astype("string")
@@ -201,7 +201,7 @@ class MIMICDiagnosis(ComponentETL):
             all_diagnoses = all_diagnoses.sort_values(sort_cols).reset_index(drop=True)
             
             # Generate sequence within each visit
-            all_diagnoses['value'] = (
+            all_diagnoses['value_num'] = (
                 all_diagnoses.groupby(grp_keys).cumcount() + 1
             ).astype('Int64').astype("string")
             
@@ -210,7 +210,7 @@ class MIMICDiagnosis(ComponentETL):
                 all_diagnoses = all_diagnoses.drop('_visit_key', axis=1)
         
         # Ensure value is string dtype
-        all_diagnoses['value'] = all_diagnoses['value'].astype("string")
+        all_diagnoses['value_num'] = all_diagnoses['value_num'].astype("string")
         
         # Create MEDS core structure
         out = pd.DataFrame({
@@ -218,8 +218,7 @@ class MIMICDiagnosis(ComponentETL):
             "time": pd.to_datetime(all_diagnoses["time_col"], errors="coerce"),
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
-            "diagnosis_source": all_diagnoses["diagnosis_source"],
-            "value": all_diagnoses["value"],  # string dtype sequence number
+            "value_num": all_diagnoses["value_num"],  # string dtype sequence number
         })
         
         # Filter out invalid records

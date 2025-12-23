@@ -66,7 +66,7 @@ class MIMICProcedures(ComponentETL):
         Load procedures_icd data, generate MEDS-compliant codes, and output MEDS-CORE format.
         
         Returns:
-            DataFrame with columns: subject_id, time, event_type, code, value
+            DataFrame with columns: subject_id, time, event_type, code, value_num
         """
         # Load procedures data
         procedures_df = self._read_csv_with_progress(
@@ -80,7 +80,7 @@ class MIMICProcedures(ComponentETL):
             axis=1
         )
         
-        # Create 'value' column for procedure sequence number (string dtype)
+        # Create 'value_num' column for procedure sequence number (string dtype)
         # Priority: use existing seq_num from procedures_icd if available
         seq_candidates = ['seq_num', 'sequence_num', 'proc_seq', 'procedure_sequence', 'seq']
         found_seq = None
@@ -91,7 +91,7 @@ class MIMICProcedures(ComponentETL):
         
         if found_seq:
             # Convert existing sequence to string, preserve pd.NA for missing values
-            procedures_df['value'] = pd.to_numeric(
+            procedures_df['value_num'] = pd.to_numeric(
                 procedures_df[found_seq], 
                 errors='coerce'
             ).astype('Int64').astype("string")
@@ -106,12 +106,12 @@ class MIMICProcedures(ComponentETL):
             procedures_df = procedures_df.sort_values(sort_cols).reset_index(drop=True)
             
             # Generate sequence within each admission
-            procedures_df['value'] = (
+            procedures_df['value_num'] = (
                 procedures_df.groupby(grp_keys).cumcount() + 1
             ).astype('Int64').astype("string")
         
         # Ensure value is string dtype
-        procedures_df['value'] = procedures_df['value'].astype("string")
+        procedures_df['value_num'] = procedures_df['value_num'].astype("string")
         
         # Use chartdate as the event time
         # chartdate represents when the procedure was performed/charted
@@ -125,7 +125,7 @@ class MIMICProcedures(ComponentETL):
             "time": pd.to_datetime(procedures_df[time_col], errors="coerce"),
             "event_type": "procedures",
             "code": procedures_df["meds_code"].astype(str),
-            "value": procedures_df["value"],  # string dtype sequence number
+            "value_num": procedures_df["value_num"],  # string dtype sequence number
         })
         
         # Filter out invalid records

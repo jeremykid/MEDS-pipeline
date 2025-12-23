@@ -7,7 +7,7 @@ MEDS pipeline for both MIMIC and AHS datasets
 
 ```bash
 # Test with MIMIC dataset (100 patients)
-python3 -m meds_pipeline.cli run --source mimic --components admissions,eds,diagnosis,procedures,medicines,demographics --cfg mimic.yaml --max-patients 100
+python3 -m meds_pipeline.cli run --source mimic --components ecgs,admissions,eds,diagnosis,procedures,medicines,demographics --cfg mimic.yaml --max-patients 100
 
 # AHS medicines component (100 patients)
 python3 -m meds_pipeline.cli run --source ahs --components ecgs,admissions,eds,diagnosis,procedures,medicines,demographics --cfg ahs.yaml --max-patients 100

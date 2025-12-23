@@ -143,7 +143,7 @@ class AHSProcedures(ComponentETL):
         Load procedures_icd data, generate MEDS-compliant codes, and output MEDS-CORE format.
         
         Returns:
-            DataFrame with columns: subject_id, time, event_type, code, value
+            DataFrame with columns: subject_id, time, event_type, code, value_num
         """
         # Load DAD data
         dad_df = self._load_dad_data()
@@ -154,9 +154,9 @@ class AHSProcedures(ComponentETL):
         # Build MEDS-compliant procedure codes
         procedures['meds_code'] = procedures['procedure_code'].apply(self._build_procedure_code)
         
-        # Create 'value' column for procedure sequence number (string dtype)
+        # Create 'value_num' column for procedure sequence number (string dtype)
         # Use the sequence_num extracted from PROCCODE column index
-        procedures['value'] = procedures['sequence_num'].astype('Int64').astype("string")
+        procedures['value_num'] = procedures['sequence_num'].astype('Int64').astype("string")
         
         # Create MEDS core structure
         out = pd.DataFrame({
@@ -164,7 +164,7 @@ class AHSProcedures(ComponentETL):
             "time": pd.to_datetime(procedures["event_time"], errors="coerce"),
             "event_type": "procedures",
             "code": procedures["meds_code"].astype(str),
-            "value": procedures["value"],  # string dtype sequence number
+            "value_num": procedures["value_num"],  # string dtype sequence number
         })
         
         # Filter out invalid records
