@@ -9,9 +9,6 @@ import pandas as pd
 from ..base import ComponentETL
 from ..registry import register
 
-# TODO 关于 mimic medicine，我想和其他 component 一样，不用 plus 这个function 只需要 run_core 然后 code 只要 
-# Code 这种格式 MEDICINE//NDC//{ndc}  可以吗？
-# 在 hosp/prescriptions/ 这个数据库里 
 '''
   pre_df = pd.read_csv("/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/prescriptions.csv.gz", compression='gzip')
 Index(['subject_id', 'hadm_id', 'pharmacy_id', 'poe_id', 'poe_seq',
@@ -240,8 +237,8 @@ class MIMICMedicines(ComponentETL):
             out["encounter_id"] = df_valid["hadm_id"].astype(str)
 
         # Optional: value_num (dose quantity)
-        if "dose_val_rx" in df_valid.columns:
-            out["value_num"] = pd.to_numeric(df_valid["dose_val_rx"], errors="coerce")
+        if "dose_val_rx" in df_valid.columns and 'doses_per_24_hrs' in df_valid.columns:
+            out["value_num"] = pd.to_numeric(df_valid["dose_val_rx"], errors="coerce")*pd.to_numeric(df_valid["doses_per_24_hrs"], errors="coerce")
 
         # Optional: unit (dose unit)
         if "dose_unit_rx" in df_valid.columns:

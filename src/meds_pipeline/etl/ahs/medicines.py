@@ -9,9 +9,6 @@ import pandas as pd
 from ..base import ComponentETL
 from ..registry import register
 import pyreadstat
-# TODO 关于 medicine，我想和其他 component 一样，不用 plus 这个function 只需要 run_core 然后 code 只要 
-# Code 这种格式 MEDICINE//ATC//{SUPP_DRUG_ATC_CODE}  可以吗？
-# example of PIN
 '''
    PATID  DSPN_DATE  DSPN_AMT_QTY DSPN_AMT_UNT_MSR_CD  DSPN_DAY_SUPPLY_QTY  \
 0    1.0 2008-04-01          60.0                 TAB                 30.0   

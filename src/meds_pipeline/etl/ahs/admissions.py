@@ -13,8 +13,8 @@ class AHSAdmissions(ComponentETL):
         # print (df.columns)
         
         # Build admission codes with format: ADMIT//HOSP//{ADMITCAT} @TODO creating map for ADMITCAT?
-        # admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].astype(str).fillna("")
-        admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].apply(self.get_ADMITCAT)
+        admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].astype(str).fillna("")
+        # admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].apply(self.get_ADMITCAT)
         
         start = pd.DataFrame({
             "subject_id": df["PATID"],
@@ -93,9 +93,8 @@ class AHSAdmissions(ComponentETL):
     
     def get_ADMITCAT(self, ADMITCAT) -> str:
         ADMITCAT_MAP = {
-            'E': 'emergency department',
-            'A': 'advanced ambulatory',
-            'U': 'urgent care',
-            'O': 'other ambulatory'
+            'N': 'N',
+            'U': 'U',
+            'L': 'L'
         }
         return ADMITCAT_MAP.get(str(ADMITCAT), "Unknown")
