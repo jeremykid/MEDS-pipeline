@@ -237,8 +237,15 @@ class MIMICMedicines(ComponentETL):
             out["encounter_id"] = df_valid["hadm_id"].astype(str)
 
         # Optional: value_num (dose quantity)
-        if "dose_val_rx" in df_valid.columns and 'doses_per_24_hrs' in df_valid.columns:
-            out["value_num"] = pd.to_numeric(df_valid["dose_val_rx"], errors="coerce")*pd.to_numeric(df_valid["doses_per_24_hrs"], errors="coerce")
+        if "dose_val_rx" in df_valid.columns:
+            dose_num = pd.to_numeric(df_valid["dose_val_rx"], errors="coerce")
+            if "doses_per_24_hrs" in df_valid.columns:
+                d24 = pd.to_numeric(df_valid["doses_per_24_hrs"], errors="coerce")
+                prod = dose_num * d24
+                # 如果乘积为 NaN（doses_per_24_hrs 缺失或不可乘），回退到原始 dose_val_rx
+                out["value_num"] = prod.where(prod.notna(), dose_num)
+            else:
+                out["value_num"] = dose_num
 
         # Optional: unit (dose unit)
         if "dose_unit_rx" in df_valid.columns:
