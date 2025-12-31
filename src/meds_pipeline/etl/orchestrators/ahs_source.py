@@ -75,6 +75,14 @@ class AHSSourceETL(DataSourceETL):
         if 'time' in result.columns:
             result['time'] = pd.to_datetime(result['time'], errors='coerce')
         
+        # Fix value_num mixed types (some components use float, others use string)
+        # Convert all to string to prevent pyarrow ArrowTypeError
+        if 'value_num' in result.columns:
+            # First convert to string, handling NaN/None properly
+            result['value_num'] = result['value_num'].apply(
+                lambda x: str(x) if pd.notna(x) else None
+            ).astype("string")
+        
         if show_progress:
             total_rows = len(result)
             total_patients = result['subject_id'].nunique() if 'subject_id' in result.columns else 0

@@ -36,7 +36,7 @@ class AHSDemographics(ComponentETL):
         Generates birth and sex events for each patient.
         """
         path = self.cfg["raw_paths"]["demographics"]
-        df = pd.read_pickle(path)
+        df = pd.read_parquet(path)
         
         # Deduplicate by PATID (keep first occurrence)
         if "PATID" not in df.columns:

@@ -12,7 +12,7 @@ raw_paths:
   ecg:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_ecg_20211105_df.pickle"
   vital_status:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_vital_20211105.sas7bdat"
   registry:             "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_reg_20211105.sas7bdat"  
-  demographics:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_demographics_with_death.pkl"
+  demographics:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_demographics_with_death.parquet"
 keys:
   subject_id: "PATID"
   # ≈: "episode_order"  
