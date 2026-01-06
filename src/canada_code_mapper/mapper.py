@@ -12,10 +12,222 @@ import pandas as pd
 from pathlib import Path
 from typing import Dict, Optional, Union, List
 import logging
+import csv
+import io
+import re
 
 from .composite import parse_composite_code, extract_plain_code
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_encoding(file_path: Path, sample_size: int = 8192) -> str:
+    """
+    Auto-detect file encoding by trying common encodings.
+    
+    Args:
+        file_path: Path to file
+        sample_size: Number of bytes to sample
+        
+    Returns:
+        Detected encoding string
+    """
+    candidates = ["utf-8", "iso-8859-1", "cp1252", "latin-1"]
+    
+    with open(file_path, "rb") as f:
+        sample_bytes = f.read(sample_size)
+    
+    # Try chardet if available
+    try:
+        import chardet
+        result = chardet.detect(sample_bytes)
+        enc = result.get("encoding")
+        if enc:
+            try:
+                sample_bytes.decode(enc)
+                return enc
+            except Exception:
+                pass
+    except ImportError:
+        pass
+    
+    # Fallback: try common encodings
+    for enc in candidates:
+        try:
+            sample_bytes.decode(enc)
+            return enc
+        except Exception:
+            continue
+    
+    return "latin-1"  # Safe fallback
+
+
+def _detect_delimiter(sample_text: str) -> Optional[str]:
+    """
+    Auto-detect CSV delimiter from sample text.
+    
+    Args:
+        sample_text: Sample of file content
+        
+    Returns:
+        Detected delimiter or None if fixed-width format
+    """
+    try:
+        dialect = csv.Sniffer().sniff(sample_text, delimiters=",\t|;")
+        return dialect.delimiter
+    except Exception:
+        return None
+
+
+def _parse_fixed_width_line(line: str) -> tuple:
+    """
+    Parse a fixed-width format line into (code, short_desc, long_desc).
+    
+    The format appears to be:
+    - First column: code (variable length, ends when multiple spaces appear)
+    - Second column: short description
+    - Third column: long description (padded with spaces)
+    
+    Args:
+        line: A single line from the file
+        
+    Returns:
+        Tuple of (code, description) where description is the long description
+    """
+    # Remove trailing whitespace and carriage return
+    line = line.rstrip()
+    
+    if not line:
+        return None, None
+    
+    # Split by 2+ consecutive spaces to separate columns
+    parts = re.split(r'\s{2,}', line)
+    
+    if len(parts) >= 3:
+        # Format: code, short_desc, long_desc
+        code = parts[0].strip()
+        # Use long description (last part), fall back to short if needed
+        description = parts[-1].strip() if parts[-1].strip() else parts[1].strip()
+        return code, description
+    elif len(parts) == 2:
+        # Format: code, description
+        return parts[0].strip(), parts[1].strip()
+    elif len(parts) == 1:
+        # Only code, no description
+        return parts[0].strip(), ""
+    
+    return None, None
+
+
+def _read_file_robust(
+    file_path: Path,
+    code_column: str = "code",
+    description_column: str = "description",
+    delimiter: Optional[str] = None,
+    encoding: Optional[str] = None,
+    **read_csv_kwargs
+) -> pd.DataFrame:
+    """
+    Robustly read a mapping file, handling various formats and encodings.
+    
+    Args:
+        file_path: Path to the file
+        code_column: Expected code column name
+        description_column: Expected description column name
+        delimiter: File delimiter (auto-detected if None)
+        encoding: File encoding (auto-detected if None)
+        **read_csv_kwargs: Additional pandas read_csv arguments
+        
+    Returns:
+        DataFrame with 'code' and 'description' columns
+    """
+    # Auto-detect encoding if not provided
+    enc_to_use = encoding if encoding else _detect_encoding(file_path)
+    logger.debug(f"Using encoding: {enc_to_use}")
+    
+    # Read sample for format detection
+    with open(file_path, "r", encoding=enc_to_use, errors="replace") as f:
+        sample_lines = [f.readline() for _ in range(10)]
+        sample_text = "".join(sample_lines)
+    
+    # Check if file has header row
+    first_line = sample_lines[0].strip() if sample_lines else ""
+    has_header = (
+        code_column.lower() in first_line.lower() or
+        description_column.lower() in first_line.lower() or
+        "code" in first_line.lower()
+    )
+    
+    # Auto-detect delimiter
+    sep_to_use = delimiter
+    if sep_to_use is None:
+        sep_to_use = _detect_delimiter(sample_text)
+    
+    # Check if this looks like fixed-width format (multiple consecutive spaces)
+    is_fixed_width = sep_to_use is None or re.search(r'\s{3,}', first_line)
+    
+    if is_fixed_width and not has_header:
+        # Parse as fixed-width format
+        logger.info(f"Detected fixed-width format for {file_path.name}")
+        
+        records = []
+        with open(file_path, "r", encoding=enc_to_use, errors="replace") as f:
+            for line in f:
+                code, desc = _parse_fixed_width_line(line)
+                if code:
+                    records.append({"code": code, "description": desc})
+        
+        df = pd.DataFrame(records)
+        logger.info(f"Parsed {len(df)} records from fixed-width file")
+        return df
+    
+    # Try standard CSV/TSV parsing
+    try:
+        df = pd.read_csv(
+            file_path,
+            sep=sep_to_use if sep_to_use else ",",
+            encoding=enc_to_use,
+            engine="python",
+            dtype=str,
+            header=0 if has_header else None,
+            on_bad_lines="warn",
+            **read_csv_kwargs
+        )
+        
+        # If no header, assign default column names
+        if not has_header:
+            if len(df.columns) >= 2:
+                df.columns = ["code", "description"] + [f"col_{i}" for i in range(2, len(df.columns))]
+            elif len(df.columns) == 1:
+                df.columns = ["code"]
+                df["description"] = ""
+        
+        # Rename columns if needed
+        col_mapping = {}
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if col_lower == code_column.lower() and col != "code":
+                col_mapping[col] = "code"
+            elif col_lower == description_column.lower() and col != "description":
+                col_mapping[col] = "description"
+        
+        if col_mapping:
+            df = df.rename(columns=col_mapping)
+        
+        return df
+        
+    except Exception as e:
+        logger.warning(f"Standard CSV parsing failed: {e}, trying fixed-width fallback")
+        
+        # Fallback: parse as fixed-width
+        records = []
+        with open(file_path, "r", encoding=enc_to_use, errors="replace") as f:
+            for line in f:
+                code, desc = _parse_fixed_width_line(line)
+                if code:
+                    records.append({"code": code, "description": desc})
+        
+        return pd.DataFrame(records)
 
 
 class CodeMapper:
@@ -69,8 +281,8 @@ class CodeMapper:
         file_path: Union[str, Path],
         code_column: str = "code",
         description_column: str = "description",
-        delimiter: str = ",",
-        encoding: str = "utf-8",
+        delimiter: Optional[str] = None,
+        encoding: Optional[str] = None,
         name: Optional[str] = None,
         code_type: str = "generic",
         **read_csv_kwargs
@@ -78,12 +290,17 @@ class CodeMapper:
         """
         Load mapper from a CSV/TXT file.
         
+        Supports various file formats including:
+        - Standard CSV/TSV files with headers
+        - Fixed-width format files (common in Canadian medical code files)
+        - Various encodings (auto-detected if not specified)
+        
         Args:
             file_path: Path to the mapping file
-            code_column: Name of the column containing codes
-            description_column: Name of the column containing descriptions
-            delimiter: File delimiter (default: ',')
-            encoding: File encoding (default: 'utf-8')
+            code_column: Name of the column containing codes (default: 'code')
+            description_column: Name of the column containing descriptions (default: 'description')
+            delimiter: File delimiter (auto-detected if None)
+            encoding: File encoding (auto-detected if None)
             name: Name for this mapper (defaults to filename)
             code_type: Type of codes
             **read_csv_kwargs: Additional arguments for pd.read_csv
@@ -96,32 +313,38 @@ class CodeMapper:
         if not file_path.exists():
             raise FileNotFoundError(f"Mapping file not found: {file_path}")
         
-        # Read the file
-        df = pd.read_csv(
+        # Read the file using robust parser (auto-detects encoding and format)
+        df = _read_file_robust(
             file_path,
+            code_column=code_column,
+            description_column=description_column,
             delimiter=delimiter,
             encoding=encoding,
             **read_csv_kwargs
         )
         
-        # Validate columns
-        if code_column not in df.columns:
+        # For fixed-width files, columns are already named 'code' and 'description'
+        # Check if requested columns exist, otherwise use defaults
+        actual_code_col = "code" if "code" in df.columns else code_column
+        actual_desc_col = "description" if "description" in df.columns else description_column
+        
+        if actual_code_col not in df.columns:
             raise ValueError(
-                f"Code column '{code_column}' not found. "
+                f"Code column '{actual_code_col}' not found. "
                 f"Available columns: {df.columns.tolist()}"
             )
-        if description_column not in df.columns:
+        if actual_desc_col not in df.columns:
             raise ValueError(
-                f"Description column '{description_column}' not found. "
+                f"Description column '{actual_desc_col}' not found. "
                 f"Available columns: {df.columns.tolist()}"
             )
         
         # Create mapping dictionary, handling NaN values
-        df = df[[code_column, description_column]].dropna()
-        df[code_column] = df[code_column].astype(str).str.strip()
-        df[description_column] = df[description_column].astype(str).str.strip()
+        df = df[[actual_code_col, actual_desc_col]].dropna()
+        df[actual_code_col] = df[actual_code_col].astype(str).str.strip()
+        df[actual_desc_col] = df[actual_desc_col].astype(str).str.strip()
         
-        mapping_dict = dict(zip(df[code_column], df[description_column]))
+        mapping_dict = dict(zip(df[actual_code_col], df[actual_desc_col]))
         
         mapper_name = name or file_path.stem
         
@@ -208,11 +431,31 @@ class CodeMapper:
             if update_stats:
                 self._stats["hits"] += 1
             return self.mapping[lookup_code]
-        else:
+        # else:
+        #     if update_stats:
+        #         self._stats["misses"] += 1
+        #     logger.debug(f"Code not found: {lookup_code}")
+        #     return default
+        min_leaf_len = 1  # keep flexible; change if you want a stricter lower bound
+        leaf = lookup_code
+        found = None
+        for L in range(len(leaf) - 1, min_leaf_len - 1, -1):
+            candidate_leaf = leaf[:L]
+            # try plain candidate
+            if candidate_leaf in self.mapping:
+                found = self.mapping[candidate_leaf]
+                break
+
+        if found:
             if update_stats:
-                self._stats["misses"] += 1
-            logger.debug(f"Code not found: {lookup_code}")
-            return default
+                self._stats["hits"] += 1
+            return found
+
+        # Not found: count a miss and return default
+        if update_stats:
+            self._stats["misses"] += 1
+        logger.debug(f"Code not found after fallback: {code_str}")
+        return default        
     
     def get_descriptions(
         self,

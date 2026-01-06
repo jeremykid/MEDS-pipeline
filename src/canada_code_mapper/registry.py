@@ -81,8 +81,8 @@ class MapperRegistry:
         file_path: str,
         code_column: str = "code",
         description_column: str = "description",
-        delimiter: str = ",",
-        encoding: str = "utf-8",
+        delimiter: Optional[str] = None,
+        encoding: Optional[str] = None,
         code_type: str = "generic",
         overwrite: bool = False,
         **read_csv_kwargs
@@ -90,13 +90,18 @@ class MapperRegistry:
         """
         Create and register a mapper from a file.
         
+        Supports various file formats including:
+        - Standard CSV/TSV files with headers
+        - Fixed-width format files (common in Canadian medical code files)
+        - Various encodings (auto-detected if not specified)
+        
         Args:
             name: Unique name for this mapper
             file_path: Path to mapping file
-            code_column: Code column name
-            description_column: Description column name
-            delimiter: File delimiter
-            encoding: File encoding
+            code_column: Code column name (default: 'code')
+            description_column: Description column name (default: 'description')
+            delimiter: File delimiter (auto-detected if None)
+            encoding: File encoding (auto-detected if None)
             code_type: Type of codes (e.g., "diagnosis", "procedure")
             overwrite: Whether to overwrite existing mapper
             **read_csv_kwargs: Additional arguments for pd.read_csv
