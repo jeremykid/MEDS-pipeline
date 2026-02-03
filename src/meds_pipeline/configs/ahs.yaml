@@ -10,6 +10,7 @@ raw_paths:
   medicines:            "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_pin_20211105.sas7bdat"
   icu:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
   ecg:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_ecg_20211105_df.pickle"
+  ecg_measurements:     "/data/padmalab_external/special_project/AHS_Data_Release_2/Globalmeasurements.pickle"
   vital_status:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_vital_20211105.sas7bdat"
   registry:             "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_reg_20211105.sas7bdat"  
   demographics:         "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_demographics_with_death.parquet"
