@@ -5,7 +5,7 @@ raw_paths:
   dad:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
   ed_diagnoses_icd:     "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_ed_20211105.pickle"
   procedures_icd:       "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
-  # labtests:             "/data/padmalab_external/special_project/AHS_Data_Release_2/"
+  labs:                 "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_lab_2012_2016_20211105.sas7bdat"
   death:                "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_death_20251124.pickle"
   medicines:            "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_pin_20211105.sas7bdat"
   icu:                  "/data/padmalab_external/special_project/AHS_Data_Release_2/rmt22884_dad_20211105.pickle"
