@@ -79,6 +79,7 @@ class AHSECGMeasurements(ComponentETL):
       - code: ECG//HR, ECG//QRS, ECG//QT, etc. (double slashes per convention)
       - numeric_value: The measurement value
       - unit: beats/min, ms, or ° depending on measurement type
+      - ecg_id: ECG identifier (GUID) for tracing back to original record
       - event_type: ECG (matches ecgs.py convention)
       - code_system: AHS_ECG (matches ecgs.py convention)
       - source_table: Globalmeasurements 
@@ -185,7 +186,7 @@ class AHSECGMeasurements(ComponentETL):
             print("⚠️  No records matched between ECG records and measurements!")
             return pd.DataFrame(columns=[
                 'subject_id', 'time', 'event_type', 'code', 
-                'code_system', 'numeric_value', 'unit', 'source_table'
+                'code_system', 'numeric_value', 'unit', 'ecg_id', 'source_table'
             ])
         
         # Melt measurements into long format (one row per measurement)
@@ -202,6 +203,7 @@ class AHSECGMeasurements(ComponentETL):
                 'code': code,
                 'numeric_value': pd.to_numeric(merged[col_name], errors='coerce'),
                 'unit': unit,
+                'ecg_id': merged['ecgId_clean'],  # ECG identifier for traceability
             })
             
             # Drop rows with missing required values
