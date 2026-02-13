@@ -3,8 +3,7 @@
 AHS Lab Results ETL Component
 
 Data sources:
-- rmt22884_lab_2012_2016_20211105.sas7bdat: Lab results 2012-2016
-- rmt22884_lab_2017_2021_20211105.sas7bdat: Lab results 2017-2021
+- lab_combined.parquet: Combined lab results 2012-2021 (pre-processed parquet)
 
 Expected columns:
 - PATID: Patient identifier
@@ -21,7 +20,7 @@ PATID  TEST_VRFY_DTTM       TEST_CD  TEST_NM     TEST_RSLT  TEST_UOFM
 from __future__ import annotations
 
 import pandas as pd
-import pyreadstat
+from pathlib import Path
 from ..base import ComponentETL
 from ..registry import register
 
@@ -244,11 +243,17 @@ class AHSLabs(ComponentETL):
         Returns:
             DataFrame with MEDS-compliant lab events
         """
-        path = self.cfg["raw_paths"]["labs"]
+        path = Path(self.cfg["raw_paths"]["labs"])
         
-        # Load SAS file
-        df, _ = pyreadstat.read_sas7bdat(path, output_format="pandas")
-        print(f"📊 Loaded {len(df):,} lab records")
+        # Load from parquet (much faster than SAS)
+        if path.suffix == '.parquet':
+            df = pd.read_parquet(path)
+            print(f"📊 Loaded {len(df):,} lab records from parquet")
+        else:
+            # Fallback to SAS for backward compatibility
+            import pyreadstat
+            df, _ = pyreadstat.read_sas7bdat(str(path), output_format="pandas")
+            print(f"📊 Loaded {len(df):,} lab records from SAS")
         
         # Clean byte-encoded columns
         byte_cols = ['TEST_CD', 'TEST_NM', 'TEST_RSLT', 'TEST_UOFM']
