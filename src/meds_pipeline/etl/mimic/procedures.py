@@ -126,6 +126,7 @@ class MIMICProcedures(ComponentETL):
             "event_type": "procedures",
             "code": procedures_df["meds_code"].astype(str),
             "value_num": procedures_df["value_num"],  # string dtype sequence number
+            "source_table": "hosp.procedures_icd",
         })
         
         # Filter out invalid records

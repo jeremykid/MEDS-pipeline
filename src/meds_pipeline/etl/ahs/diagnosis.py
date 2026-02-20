@@ -81,16 +81,16 @@ class AHSDiagnosis(ComponentETL):
             source_type: 'DAD' or 'ED' to determine number of DXCODE columns
         
         Returns:
-            DataFrame with melted diagnosis codes and diagnosis_source column
+            DataFrame with melted diagnosis codes and source_table column
         """
         if source_type == 'DAD':
             dx_columns = [f'DXCODE{i}' for i in range(1, 26)]  # DXCODE1-DXCODE25
             time_col = 'ADMITDATE_DT'
-            diagnosis_source = 'INPATIENT'
+            source_table = 'rmt22884_dad_20211105'
         elif source_type == 'ED':
             dx_columns = [f'DXCODE{i}' for i in range(1, 11)]  # DXCODE1-DXCODE10
             time_col = 'VISIT_DATE_DT'
-            diagnosis_source = 'ED'
+            source_table = 'rmt22884_ed_20211105'
         else:
             raise ValueError(f"Unknown source_type: {source_type}")
         
@@ -116,8 +116,7 @@ class AHSDiagnosis(ComponentETL):
         melted['sequence_num'] = melted['dx_sequence'].str.extract(r'DXCODE(\d+)').astype(int)
         
         # Add source information
-        melted['source_table'] = source_type
-        melted['diagnosis_source'] = diagnosis_source
+        melted['source_table'] = source_table
         
         # Filter out empty/null diagnosis codes
         melted = melted[melted['diagnosis_code'].notna()]
@@ -182,6 +181,7 @@ class AHSDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "value_num": all_diagnoses["value_num"],  # string dtype sequence number
+            "source_table": all_diagnoses["source_table"].astype(str),
         })
         
         # Filter out invalid records
@@ -206,17 +206,12 @@ class AHSDiagnosis(ComponentETL):
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:
         """
         Create human-readable metadata for diagnosis records, e.g.:
-        "source=INPATIENT | table=DAD | seq=1 | dx_col=DXCODE1"
+        "table=rmt22884_dad_20211105 | seq=1 | dx_col=DXCODE1"
         or
-        "source=ED | table=ED | seq=5 | dx_col=DXCODE5"
+        "table=rmt22884_ed_20211105 | seq=5 | dx_col=DXCODE5"
         """
         parts = []
-        
-        # Add diagnosis source (INPATIENT vs ED)
-        if "diagnosis_source" in df.columns:
-            diag_source_txt = "source=" + df["diagnosis_source"].astype(str)
-            parts.append(diag_source_txt)
-        
+
         # Add source table (DAD vs ED)
         if "source_table" in df.columns:
             table_txt = "table=" + df["source_table"].astype(str)

@@ -165,6 +165,7 @@ class AHSProcedures(ComponentETL):
             "event_type": "procedures",
             "code": procedures["meds_code"].astype(str),
             "value_num": procedures["value_num"],  # string dtype sequence number
+            "source_table": "rmt22884_dad_20211105",
         })
         
         # Filter out invalid records
