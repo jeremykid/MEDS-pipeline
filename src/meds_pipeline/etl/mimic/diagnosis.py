@@ -83,7 +83,7 @@ class MIMICDiagnosis(ComponentETL):
         )
         
         # Add source marker
-        hosp_diagnoses['diagnosis_source'] = 'INPATIENT'
+        hosp_diagnoses['source_table'] = 'hosp.diagnoses_icd'
         hosp_diagnoses['time_col'] = hosp_diagnoses['admittime']
         
         return hosp_diagnoses
@@ -138,7 +138,7 @@ class MIMICDiagnosis(ComponentETL):
             ed_diagnoses['subject_id'] = ed_diagnoses['subject_id'].astype(str)
         
         # Fill time_col from intime (from stays) for consistent MEDS time
-        ed_diagnoses['diagnosis_source'] = 'ED'
+        ed_diagnoses['source_table'] = 'ed.diagnosis'
         if 'intime' in ed_diagnoses.columns:
             ed_diagnoses['time_col'] = ed_diagnoses['intime']
         else:
@@ -219,6 +219,7 @@ class MIMICDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "value_num": all_diagnoses["value_num"],  # string dtype sequence number
+            "source_table": all_diagnoses.get("source_table", "diagnosis"),
         })
         
         # Filter out invalid records
@@ -243,16 +244,15 @@ class MIMICDiagnosis(ComponentETL):
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:
         """
         Create human-readable metadata for diagnosis records, e.g.:
-        "source=INPATIENT | hadm_id=22595853 | seq=1 | icd_version=9 | desc=Portal hypertension"
+        "table=hosp.diagnoses_icd | hadm_id=22595853 | seq=1 | icd_version=9 | desc=Portal hypertension"
         or
-        "source=ED | stay_id=33258284 | seq=1 | icd_version=10 | desc=Abdominal pain"
+        "table=ed.diagnosis | stay_id=33258284 | seq=1 | icd_version=10 | desc=Abdominal pain"
         """
         parts = []
-        
-        # Add diagnosis source
-        if "diagnosis_source" in df.columns:
-            source_txt = "source=" + df["diagnosis_source"].astype(str)
-            parts.append(source_txt)
+
+        if "source_table" in df.columns:
+            table_txt = "table=" + df["source_table"].astype(str)
+            parts.append(table_txt)
         
         # Add encounter ID (hadm_id for hospital, stay_id for ED)
         if "hadm_id" in df.columns:

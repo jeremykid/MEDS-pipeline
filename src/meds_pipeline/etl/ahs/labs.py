@@ -117,7 +117,7 @@ class AHSLabs(ComponentETL):
       - subject_id: Patient ID (from PATID)
       - time: Test verification timestamp (from TEST_VRFY_DTTM)
       - code: LAB//LOINC//{loinc_code} or LAB//AHS//{local_code}
-      - numeric_value: Parsed result value
+      - value_num: Parsed numeric result value
       - comparator: "<", "<=", ">", ">=" or None (preserves clinical meaning)
       - unit: Unit of measure
       - event_type: "lab"
@@ -126,12 +126,12 @@ class AHSLabs(ComponentETL):
     
     Example MEDS output:
     
-    | subject_id | time                | code                | numeric_value | comparator | unit   |
-    |------------|---------------------|---------------------|---------------|------------|--------|
-    | 2          | 2012-04-26 08:57:00 | LAB//LOINC//718-7   | 110.0         | None       | g/L    |
-    | 2          | 2012-04-26 12:47:00 | LAB//LOINC//2823-3  | 4.7           | None       | mmol/L |
-    | 5          | 2013-01-15 09:30:00 | LAB//LOINC//10839-9 | 0.01          | <          | ng/L   |
-    | 5          | 2013-01-15 09:30:00 | LAB//LOINC//30934-4 | 100.0         | >          | ng/L   |
+    | subject_id | time                | code                | value_num | comparator | unit   |
+    |------------|---------------------|---------------------|-----------|------------|--------|
+    | 2          | 2012-04-26 08:57:00 | LAB//LOINC//718-7   | 110.0     | None       | g/L    |
+    | 2          | 2012-04-26 12:47:00 | LAB//LOINC//2823-3  | 4.7       | None       | mmol/L |
+    | 5          | 2013-01-15 09:30:00 | LAB//LOINC//10839-9 | 0.01      | <          | ng/L   |
+    | 5          | 2013-01-15 09:30:00 | LAB//LOINC//30934-4 | 100.0     | >          | ng/L   |
     
     Note: comparator preserves clinical meaning:
       - "<0.01" for troponin means "below detection limit" (normal)
@@ -178,7 +178,7 @@ class AHSLabs(ComponentETL):
             result_str: Raw result string
             
         Returns:
-            Tuple of (numeric_value, comparator)
+            Tuple of (value_num, comparator)
             comparator is one of: "<", "<=", ">", ">=", or None
         """
         import re
@@ -282,19 +282,36 @@ class AHSLabs(ComponentETL):
         
         df['unit'] = df.apply(get_unit, axis=1)
         
-        # Build output
+        # Build output (aligned with other components: use value_num)
+        subject_id = pd.to_numeric(df['PATID'], errors='coerce').astype('Int64').astype(str)
+        subject_id = subject_id.replace({'<NA>': None, 'nan': None, 'NaN': None, 'None': None})
+        raw_result = df['TEST_RSLT'].fillna('').astype(str).str.strip()
+
+        if 'TEST_NM' in df.columns:
+            test_name = df['TEST_NM'].fillna('').astype(str).str.strip()
+            value_text = (
+                'test=' + test_name + ' | raw=' + raw_result
+            )
+            value_text = value_text.where(
+                ~((test_name == '') & (raw_result == '')),
+                ''
+            )
+        else:
+            value_text = raw_result
+
         out = pd.DataFrame({
-            'subject_id': df['PATID'].astype('Int64').astype(str),
+            'subject_id': subject_id,
             'time': pd.to_datetime(df['TEST_VRFY_DTTM'], errors='coerce'),
             'code': df['meds_code'],
-            'numeric_value': df['value_num'],
+            'value_num': df['value_num'],
             'comparator': df['comparator'],  # <, <=, >, >= or None
             'unit': df['unit'],
             'event_type': 'lab',
             'code_system': df['meds_code_system'],
+            'value_text': value_text,
             'source_table': 'rmt22884_lab',
+            'provenance_id': (df.index.astype(int) + 1).astype(str),
         })
-        
         # Filter invalid rows
         out = out.dropna(subset=['subject_id', 'time', 'code'])
         out = out[out['subject_id'].str.strip() != '']

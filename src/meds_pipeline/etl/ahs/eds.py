@@ -42,6 +42,7 @@ class AHSEDs(ComponentETL):
     
     def run_core(self) -> pd.DataFrame:
         df = self._load_ed_data()
+        source_table = "rmt22884_ed_20211105"
         
         # Validate required columns
         required_cols = ["PATID", "VISIT_DATE_DT"]
@@ -64,6 +65,7 @@ class AHSEDs(ComponentETL):
             "event_type": "ed_visit",
             "code": ed_codes,
             "code_system": "AHS_ED",
+            "source_table": source_table,
         })
         
         # Filter out invalid records
@@ -87,7 +89,7 @@ class AHSEDs(ComponentETL):
         df_filtered = df[valid_mask].reset_index(drop=True)
         
         # Add ED-specific metadata
-        core["source_table"] = "AHS_ED"
+        core["source_table"] = "rmt22884_ed_20211105"
         core["encounter_type"] = "emergency_department"
         
         # Count number of diagnosis and procedure codes for this visit

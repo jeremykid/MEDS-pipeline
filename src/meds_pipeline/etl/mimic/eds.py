@@ -45,6 +45,7 @@ class MIMICEDs(ComponentETL):
             "event_type": "ed.entry",
             "code": ed_entry_codes,
             "code_system": "EVENT",
+            "source_table": "ed.edstays",
         })
         
         # Build ED exit codes with format: DISCHARGE//ED//{disposition}
@@ -61,6 +62,7 @@ class MIMICEDs(ComponentETL):
             "event_type": "ed.exit",
             "code": ed_exit_codes, 
             "code_system": "EVENT",
+            "source_table": "ed.edstays",
         })
         
         # Combine entry and exit events
@@ -183,4 +185,3 @@ class MIMICEDs(ComponentETL):
             axis=1
         )
         return metadata
-

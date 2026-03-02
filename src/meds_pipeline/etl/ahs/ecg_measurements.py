@@ -77,7 +77,7 @@ class AHSECGMeasurements(ComponentETL):
       - subject_id: Patient ID (from PATID)
       - time: ECG acquisition timestamp (from dateAcquired)
       - code: ECG//HR, ECG//QRS, ECG//QT, etc. (double slashes per convention)
-      - numeric_value: The measurement value
+      - value_num: The measurement value
       - unit: beats/min, ms, or ° depending on measurement type
       - ecg_id: ECG identifier (GUID) for tracing back to original record
       - event_type: ECG (matches ecgs.py convention)
@@ -156,7 +156,7 @@ class AHSECGMeasurements(ComponentETL):
         
         Returns:
             DataFrame with columns: subject_id, time, event_type, code, 
-            code_system, numeric_value, unit, source_table
+            code_system, value_num, unit, source_table
         """
         # Load data
         ecg_records = self._load_pickle(self.cfg["raw_paths"]["ecg"], "ECG records")
@@ -186,7 +186,7 @@ class AHSECGMeasurements(ComponentETL):
             print("⚠️  No records matched between ECG records and measurements!")
             return pd.DataFrame(columns=[
                 'subject_id', 'time', 'event_type', 'code', 
-                'code_system', 'numeric_value', 'unit', 'ecg_id', 'source_table'
+                'code_system', 'value_num', 'unit', 'ecg_id', 'source_table'
             ])
         
         # Melt measurements into long format (one row per measurement)
@@ -201,13 +201,13 @@ class AHSECGMeasurements(ComponentETL):
                 'subject_id': merged['PATID'].astype('Int64').astype(str),
                 'time': pd.to_datetime(merged['dateAcquired'], errors='coerce'),
                 'code': code,
-                'numeric_value': pd.to_numeric(merged[col_name], errors='coerce'),
+                'value_num': pd.to_numeric(merged[col_name], errors='coerce'),
                 'unit': unit,
                 'ecg_id': merged['ecgId_clean'],  # ECG identifier for traceability
             })
             
             # Drop rows with missing required values
-            df_meas = df_meas.dropna(subset=['subject_id', 'time', 'numeric_value'])
+            df_meas = df_meas.dropna(subset=['subject_id', 'time', 'value_num'])
             
             if len(df_meas) > 0:
                 all_events.append(df_meas)

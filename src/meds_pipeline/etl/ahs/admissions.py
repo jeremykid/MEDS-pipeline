@@ -22,6 +22,7 @@ class AHSAdmissions(ComponentETL):
             "event_type": "encounter.start",
             "code": admit_codes,
             "code_system": "EVENT",
+            "source_table": "rmt22884_dad_20211105",
         })
 
         # Build discharge codes with format: DISCHARGE//HOSP//{DISP}
@@ -34,6 +35,7 @@ class AHSAdmissions(ComponentETL):
             "event_type": "encounter.end",
             "code": discharge_codes,
             "code_system": "EVENT",
+            "source_table": "rmt22884_dad_20211105",
         })
         out = pd.concat([start, end], ignore_index=True)
         return out

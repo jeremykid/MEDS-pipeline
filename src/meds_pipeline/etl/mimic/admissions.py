@@ -19,6 +19,7 @@ class MIMICAdmissions(ComponentETL):
             "event_type": "encounter.start",
             "code": admit_codes,
             "code_system": "EVENT",
+            "source_table": "hosp.admissions",
         })
         
         # Build discharge codes with format: DISCHARGE//HOSP//{discharge_location}
@@ -31,6 +32,7 @@ class MIMICAdmissions(ComponentETL):
             "event_type": "encounter.end",
             "code": discharge_codes,
             "code_system": "EVENT",
+            "source_table": "hosp.admissions",
         })
         out = pd.concat([start, end], ignore_index=True)
         return out
