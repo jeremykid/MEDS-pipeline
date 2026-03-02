@@ -178,7 +178,7 @@ class AHSLabs(ComponentETL):
             result_str: Raw result string
             
         Returns:
-            Tuple of (numeric_value, comparator)
+            Tuple of (value_num, comparator)
             comparator is one of: "<", "<=", ">", ">=", or None
         """
         import re
@@ -312,9 +312,6 @@ class AHSLabs(ComponentETL):
             'source_table': 'rmt22884_lab',
             'provenance_id': (df.index.astype(int) + 1).astype(str),
         })
-        # Backward compatibility for older notebooks/scripts.
-        out['numeric_value'] = out['value_num']
-        
         # Filter invalid rows
         out = out.dropna(subset=['subject_id', 'time', 'code'])
         out = out[out['subject_id'].str.strip() != '']
