@@ -11,22 +11,20 @@ from ..registry import register
 class AHSDemographics(ComponentETL):
     """
     Component: AHS demographics → MEDS event stream
-    Produces three types of events:
+    Produces two types of events:
       1. Birth event (code='MEDS_BIRTH', time=DOB or Birth_Year-01-01)
       2. Sex event (code='GENDER//M|F|O', time=NaT)
-      3. Death event (code='MEDS_DEATH', time=death_date)
+
+    Note: Death/censor events are now handled by the separate "censor" component.
 
     Expected raw columns:
       - PATID (required)
       - DOB (preferred for birth date) or Birth_Year (fallback)
       - SEX (for gender, values: 'M', 'F', or other)
-      - death_date (optional, date of death)
-      - death_source (optional, source of death information, e.g., 'vital_status', 'registry')
     
     Output format:
       - Birth: code='MEDS_BIRTH', code_system='MEDS', event_type='demographics.birth'
       - Sex: code='GENDER//M|F|O', code_system='GENDER', event_type='demographics.sex'
-      - Death: code='MEDS_DEATH', code_system='MEDS', event_type='death'
     """
 
     # ---------------------------- Core -------------------------------------- #
@@ -46,7 +44,7 @@ class AHSDemographics(ComponentETL):
         # subject_id
         subject = df["PATID"].astype("Int64").astype(str)
         
-        # Collect all events (birth + sex + death)
+        # Collect all events (birth + sex)
         events = []
         
         # -------------------- Birth Events -------------------- #
@@ -58,11 +56,6 @@ class AHSDemographics(ComponentETL):
         sex_events = self._create_sex_events(df, subject)
         if not sex_events.empty:
             events.append(sex_events)
-        
-        # -------------------- Death Events -------------------- #
-        death_events = self._create_death_events(df, subject)
-        if not death_events.empty:
-            events.append(death_events)
         
         # Combine all events
         if not events:
@@ -162,41 +155,4 @@ class AHSDemographics(ComponentETL):
         sex_df["provenance_id"] = (sex_df.index.astype(int) + 1).astype(str)
         
         return sex_df
-    
-    def _create_death_events(self, df: pd.DataFrame, subject: pd.Series) -> pd.DataFrame:
-        """
-        Create death events using death_date.
-        Only creates events for patients with a valid death date.
-        """
-        if "death_date" not in df.columns:
-            return pd.DataFrame()
-        
-        # Parse death date
-        death_date = pd.to_datetime(df["death_date"], errors="coerce")
-        
-        death_df = pd.DataFrame({
-            "subject_id": subject,
-            "time": death_date,
-            "event_type": "demographics.death",
-            "code": "MEDS_DEATH",
-            "code_system": "MEDS",
-        })
-        
-        # Add source for auditing (if available)
-        if "death_source" in df.columns:
-            death_source = df["death_source"].astype(str).str.strip()
-            death_df["value_text"] = "source=" + death_source.where(
-                death_source.notna() & (death_source != "") & (death_source.str.lower() != "none"),
-                "unknown"
-            )
-        else:
-            death_df["value_text"] = "source=death_date"
-        
-        # Metadata
-        death_df["source_table"] = "demographics"
-        death_df["provenance_id"] = (death_df.index.astype(int) + 1).astype(str)
-        
-        # Drop rows with NaT time (patients who are still alive)
-        death_df = death_df.dropna(subset=["time"]).reset_index(drop=True)
-        
-        return death_df
+

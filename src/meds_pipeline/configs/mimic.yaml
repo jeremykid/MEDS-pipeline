@@ -12,6 +12,7 @@ raw_paths:
   diagnoses_icd:        "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/diagnoses_icd.csv.gz"
   ecgs:                 '/data/padmalab_external/special_project/physionet.org/files/mimic-iv-ecg/1.0/record_list.csv'
   demographics:         "/data/padmalab_external/special_project/physionet.org/files/mimiciv/3.1/hosp/patients.csv.gz"
+  censor:               '/data/padmalab_external/special_project/Weijie_Code/Discharged_ECG_Death_label/mimic_censor_death_label.csv.gz'
 keys:
   subject_id: "subject_id"
   encounter_id: "hadm_id"

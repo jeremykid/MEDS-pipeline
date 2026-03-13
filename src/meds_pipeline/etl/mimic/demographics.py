@@ -11,22 +11,21 @@ from ..registry import register
 class MIMICDemographics(ComponentETL):
     """
     Component: MIMIC-IV patients → MEDS event stream
-    Produces three types of events:
+    Produces two types of events:
       1. Birth event (code='MEDS_BIRTH', time calculated from anchor_year - anchor_age)
       2. Sex event (code='GENDER//M|F|O', time=NaT)
-      3. Death event (code='MEDS_DEATH', time=dod)
+
+    Note: Death/censor events are now handled by the separate "censor" component.
 
     Expected raw columns (from patients.csv.gz):
       - subject_id (required)
       - gender (values: 'M', 'F', or other)
       - anchor_year (required for birth calculation)
       - anchor_age (required for birth calculation)
-      - dod (optional, death date)
     
     Output format:
       - Birth: code='MEDS_BIRTH', code_system='MEDS', event_type='demographics.birth'
       - Sex: code='GENDER//M|F|O', code_system='GENDER', event_type='demographics.sex'
-      - Death: code='MEDS_DEATH', code_system='MEDS', event_type='death'
     
     Note: MIMIC doesn't provide exact DOB for privacy. We estimate birth year as:
           birth_year = anchor_year - anchor_age
@@ -38,6 +37,7 @@ class MIMICDemographics(ComponentETL):
         """
         Converts MIMIC-IV patients to MEDS core format.
         Generates birth and sex events for each patient.
+        Death/censor events are handled by the separate "censor" component.
         """
         path = self.cfg["raw_paths"]["demographics"]
         df = self._read_csv_with_progress(path, "Loading demographics data")
@@ -52,7 +52,7 @@ class MIMICDemographics(ComponentETL):
         # subject_id
         subject = df["subject_id"].astype(str)
         
-        # Collect all events (birth + sex + death)
+        # Collect all events (birth + sex)
         events = []
         
         # -------------------- Birth Events -------------------- #
@@ -64,11 +64,6 @@ class MIMICDemographics(ComponentETL):
         sex_events = self._create_sex_events(df, subject)
         if not sex_events.empty:
             events.append(sex_events)
-        
-        # -------------------- Death Events -------------------- #
-        death_events = self._create_death_events(df, subject)
-        if not death_events.empty:
-            events.append(death_events)
         
         # Combine all events
         if not events:
@@ -162,34 +157,3 @@ class MIMICDemographics(ComponentETL):
         sex_df["provenance_id"] = subject.astype(str)
         
         return sex_df
-    
-    def _create_death_events(self, df: pd.DataFrame, subject: pd.Series) -> pd.DataFrame:
-        """
-        Create death events using dod (date of death).
-        Only creates events for patients with a valid death date.
-        """
-        if "dod" not in df.columns:
-            return pd.DataFrame()
-        
-        # Parse death date
-        dod = pd.to_datetime(df["dod"], errors="coerce")
-        
-        death_df = pd.DataFrame({
-            "subject_id": subject,
-            "time": dod,
-            "event_type": "death",
-            "code": "MEDS_DEATH",
-            "code_system": "MEDS",
-        })
-        
-        # Add source for auditing
-        death_df["value_text"] = "source=dod"
-        
-        # Metadata
-        death_df["source_table"] = "patients"
-        death_df["provenance_id"] = subject.astype(str)
-        
-        # Drop rows with NaT time (patients who are still alive)
-        death_df = death_df.dropna(subset=["time"]).reset_index(drop=True)
-        
-        return death_df
