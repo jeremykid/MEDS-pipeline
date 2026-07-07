@@ -10,14 +10,16 @@ class AHSAdmissions(ComponentETL):
         path = self.cfg["raw_paths"]["admissions"]
         # df = pd.read_csv(path)
         df, meta = pyreadstat.read_sas7bdat(path, output_format="pandas")
+        df = self._filter_to_patient_ids(df, "PATID")
         # print (df.columns)
+        subject = self._subject_id_string(df["PATID"])
         
         # Build admission codes with format: ADMIT//HOSP//{ADMITCAT} @TODO creating map for ADMITCAT?
         admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].astype(str).fillna("")
         # admit_codes = "ADMIT//HOSP//" + df["ADMITCAT"].apply(self.get_ADMITCAT)
         
         start = pd.DataFrame({
-            "subject_id": df["PATID"],
+            "subject_id": subject,
             "time": pd.to_datetime(df["ADMITDATE_DT"], errors="coerce"),
             "event_type": "encounter.start",
             "code": admit_codes,
@@ -30,7 +32,7 @@ class AHSAdmissions(ComponentETL):
         discharge_codes = "DISCHARGE//HOSP//" + df["DISP"].apply(self.get_SEPI_DISPOS)
                 
         end = pd.DataFrame({
-            "subject_id": df["PATID"],
+            "subject_id": subject,
             "time": pd.to_datetime(df["DISDATE_DT"], errors="coerce"),
             "event_type": "encounter.end",
             "code": discharge_codes,

@@ -147,6 +147,7 @@ class AHSProcedures(ComponentETL):
         """
         # Load DAD data
         dad_df = self._load_dad_data()
+        dad_df = self._filter_to_patient_ids(dad_df, "PATID")
         
         # Extract procedure codes
         procedures = self._extract_procedure_codes(dad_df)
@@ -160,7 +161,7 @@ class AHSProcedures(ComponentETL):
         
         # Create MEDS core structure
         out = pd.DataFrame({
-            "subject_id": procedures["PATID"].astype(str),
+            "subject_id": self._subject_id_string(procedures["PATID"]),
             "time": pd.to_datetime(procedures["event_time"], errors="coerce"),
             "event_type": "procedures",
             "code": procedures["meds_code"].astype(str),

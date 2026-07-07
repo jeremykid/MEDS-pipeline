@@ -191,6 +191,12 @@ class MIMICLabs(ComponentETL):
         subject = self._int_string(chunk["subject_id"])
         valid_subject = subject.notna() & (subject.fillna("").astype(str).str.strip() != "")
 
+        patient_ids = self.base_cfg.get("patient_ids")
+        if patient_ids:
+            keep_subjects.update(str(patient_id) for patient_id in patient_ids)
+            keep_mask = valid_subject & subject.fillna("").astype(str).isin(keep_subjects)
+            return chunk.loc[keep_mask].copy()
+
         if not max_patients:
             return chunk.loc[valid_subject].copy()
 
@@ -206,7 +212,26 @@ class MIMICLabs(ComponentETL):
         keep_mask = valid_subject & subject.fillna("").astype(str).isin(keep_subjects)
         return chunk.loc[keep_mask].copy()
 
-    def run_core(self) -> pd.DataFrame:
+    @staticmethod
+    def _empty_output() -> pd.DataFrame:
+        return pd.DataFrame(
+            columns=[
+                "subject_id",
+                "time",
+                "event_type",
+                "code",
+                "code_system",
+                "value_num",
+                "comparator",
+                "unit",
+                "value_text",
+                "source_table",
+                "provenance_id",
+                "encounter_id",
+            ]
+        )
+
+    def iter_core(self):
         path = self._resolve_labevents_path()
         max_patients = self.base_cfg.get("max_patients")
         show_progress = self.base_cfg.get("show_progress", True)
@@ -244,9 +269,9 @@ class MIMICLabs(ComponentETL):
         )
 
         keep_subjects: Set[str] = set()
-        parts = []
         processed_rows = 0
         emitted_rows = 0
+        emitted_patients: Set[str] = set()
 
         for i, chunk in enumerate(reader, start=1):
             processed_rows += len(chunk)
@@ -260,7 +285,7 @@ class MIMICLabs(ComponentETL):
                 continue
 
             emitted_rows += len(out_chunk)
-            parts.append(out_chunk)
+            emitted_patients.update(out_chunk["subject_id"].dropna().astype(str).unique())
 
             if show_progress and (i == 1 or i % 10 == 0):
                 patient_msg = f", selected_patients={len(keep_subjects):,}" if max_patients else ""
@@ -268,29 +293,13 @@ class MIMICLabs(ComponentETL):
                     f"   └─ Chunks={i:,}, rows_read={processed_rows:,}, "
                     f"rows_emitted={emitted_rows:,}{patient_msg}"
                 )
-
-        if not parts:
-            return pd.DataFrame(
-                columns=[
-                    "subject_id",
-                    "time",
-                    "event_type",
-                    "code",
-                    "code_system",
-                    "value_num",
-                    "comparator",
-                    "unit",
-                    "value_text",
-                    "source_table",
-                    "provenance_id",
-                    "encounter_id",
-                ]
-            )
-
-        out = pd.concat(parts, ignore_index=True)
+            yield out_chunk
 
         if show_progress:
-            patients = out["subject_id"].nunique() if "subject_id" in out.columns else 0
-            print(f"   ✅ Generated {len(out):,} lab events for {patients:,} patients")
+            print(f"   ✅ Generated {emitted_rows:,} lab events for {len(emitted_patients):,} patients")
 
-        return out
+    def run_core(self) -> pd.DataFrame:
+        parts = list(self.iter_core())
+        if not parts:
+            return self._empty_output()
+        return pd.concat(parts, ignore_index=True)

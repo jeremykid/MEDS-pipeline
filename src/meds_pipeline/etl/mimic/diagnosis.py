@@ -69,6 +69,7 @@ class MIMICDiagnosis(ComponentETL):
         
         # Load hospital diagnoses
         hosp_diagnoses = pd.read_csv(self.cfg["raw_paths"]["hosp_diagnoses_icd"], compression='gzip')
+        hosp_diagnoses = self._filter_to_patient_ids(hosp_diagnoses, "subject_id")
         hosp_diagnoses = hosp_diagnoses.merge(d_icd_diagnoses, on='icd_code', how='left')
         
         # Load admission data for timing
@@ -100,6 +101,7 @@ class MIMICDiagnosis(ComponentETL):
         
         # Load ED diagnoses
         ed_diagnoses = pd.read_csv(self.cfg["raw_paths"]["ed_diagnoses_icd"], compression='gzip')
+        ed_diagnoses = self._filter_to_patient_ids(ed_diagnoses, "subject_id")
         ed_diagnoses = ed_diagnoses.merge(d_icd_diagnoses, on='icd_code', how='left')
         
         # Load ED stay data for timing

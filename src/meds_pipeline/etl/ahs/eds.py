@@ -42,6 +42,7 @@ class AHSEDs(ComponentETL):
     
     def run_core(self) -> pd.DataFrame:
         df = self._load_ed_data()
+        df = self._filter_to_patient_ids(df, "PATID")
         source_table = "rmt22884_ed_20211105"
         
         # Validate required columns
@@ -60,7 +61,7 @@ class AHSEDs(ComponentETL):
         
         # Create ED visit encounters (only start events since ED visits typically don't have discharge times)
         ed_visits = pd.DataFrame({
-            "subject_id": df["PATID"].astype(str),
+            "subject_id": self._subject_id_string(df["PATID"]),
             "time": pd.to_datetime(df["VISIT_DATE_DT"], errors="coerce"),
             "event_type": "ed_visit",
             "code": ed_codes,

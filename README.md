@@ -13,10 +13,10 @@ python3 -m meds_pipeline.cli run --source mimic --components ecgs,labs,admission
 python3 -m meds_pipeline.cli run --source ahs --components ecgs,labs,admissions,eds,diagnosis,procedures,medicines,demographics --cfg ahs.yaml --progress --max-patients 100
 
 # MIMIC with multiple components (100 patients, CORE format - default)
-PYTHONPATH=src python3 -m meds_pipeline.cli run --source mimic --components admissions,eds --cfg src/meds_pipeline/configs/mimic.yaml --max-patients 100 --progress
+PYTHONPATH=src python3 -m meds_pipeline.cli run --source mimic --components censor --cfg src/meds_pipeline/configs/mimic.yaml --max-patients 100 --progress
 
 # AHS with multiple components (100 patients, CORE format - default)
-PYTHONPATH=src python3 -m meds_pipeline.cli run --source ahs --components admissions,eds --cfg src/meds_pipeline/configs/ahs.yaml --max-patients 100 --progress
+PYTHONPATH=src python3 -m meds_pipeline.cli run --source ahs --components censor --cfg src/meds_pipeline/configs/ahs.yaml --max-patients 100 --progress
 ```
 
 ## Progress Display and Patient Limiting Features
@@ -111,6 +111,33 @@ Generated 2,345 rows for 100 unique patients
 
 Note on output chunking: when the pipeline's output contains more than the default chunk size (100,000 rows), results are split into multiple files named `<source>_meds_core_part_{NNN}.parquet` and saved under `base.output_dir/<source>/`; otherwise a single file `<source>_meds_core.parquet` is written.
 
+For patient-timeline access, use the patient-bucketed layout:
+
+```bash
+PYTHONPATH=src python3 -m meds_pipeline.cli run \
+  --source mimic \
+  --components ecgs,labs,admissions,eds,diagnosis,procedures,medicines,demographics \
+  --cfg src/meds_pipeline/configs/mimic.yaml \
+  --layout patient-bucketed \
+  --patient-buckets 256
+```
+
+This writes component staging under `base.output_dir/<source>/_staging_meds_core_by_patient/`, then finalizes a sorted parquet dataset under `base.output_dir/<source>/<source>_meds_core_by_patient/` with directories like `bucket=000/part-000.parquet`. Each `subject_id` maps to one stable hash bucket, and rows inside each final bucket are sorted by `subject_id`, `time`, `event_type`, and `code`.
+
+After an initial patient-bucketed run, you can refresh one component without rerunning the others:
+
+```bash
+PYTHONPATH=src python3 -m meds_pipeline.cli run \
+  --source mimic \
+  --components labs \
+  --cfg src/meds_pipeline/configs/mimic.yaml \
+  --layout patient-bucketed \
+  --patient-buckets 256 \
+  --incremental
+```
+
+Incremental mode rewrites only the requested component staging and then rebuilds the final merged dataset from all currently staged components.
+
 ## Parameter Reference
 
 | Parameter | Type | Default | Description |
@@ -120,6 +147,9 @@ Note on output chunking: when the pipeline's output contains more than the defau
 | `--no-progress` | flag | False | Hide progress information |
 | `--source` | choice | Required | Data source: mimic or ahs |
 | `--components` | string | Required | Comma-separated list of components |
+| `--layout` | choice | `flat` | Output layout: `flat` or `patient-bucketed` |
+| `--patient-buckets` | int | `256` | Number of stable `subject_id` hash buckets for patient-bucketed output |
+| `--incremental` | flag | False | Refresh only requested component staging, then rebuild patient-bucketed final output |
 
 ## Recommended Workflow
 

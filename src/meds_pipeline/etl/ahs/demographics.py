@@ -39,10 +39,11 @@ class AHSDemographics(ComponentETL):
         # Deduplicate by PATID (keep first occurrence)
         if "PATID" not in df.columns:
             raise KeyError("AHS demographics expects column `PATID`")
+        df = self._filter_to_patient_ids(df, "PATID")
         df = df.drop_duplicates(subset=["PATID"], keep="first").reset_index(drop=True)
         
         # subject_id
-        subject = df["PATID"].astype("Int64").astype(str)
+        subject = self._subject_id_string(df["PATID"])
         
         # Collect all events (birth + sex)
         events = []
@@ -155,4 +156,3 @@ class AHSDemographics(ComponentETL):
         sex_df["provenance_id"] = (sex_df.index.astype(int) + 1).astype(str)
         
         return sex_df
-

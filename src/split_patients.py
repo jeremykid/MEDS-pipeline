@@ -24,9 +24,9 @@ ecg_record_df = pd.read_csv('/data/padmalab_external/special_project/physionet.o
 data_df = temp[['study_id', 'subject_id', 'strat_fold']]
 data_df = data_df.merge(ecg_record_df[['study_id', 'path', 'ecg_time']], on='study_id')
 folds = data_df['strat_fold'].unique().tolist()
-random.shuffle(folds)
-train, val, test = folds[:10], folds[10:12], folds[12:]
-
+# random.shuffle(folds)
+# train, val, test = folds[:10], folds[10:12], folds[12:]
+train, val, test = [1, 7, 13, 19, 12, 18, 5, 11, 8, 16], [3, 15], [0, 14, 10, 6, 17, 2, 9, 4]
 train_df = data_df[data_df['strat_fold'].isin(train)]
 val_df = data_df[data_df['strat_fold'].isin(val)]
 test_df = data_df[data_df['strat_fold'].isin(test)]

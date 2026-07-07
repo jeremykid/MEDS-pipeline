@@ -128,6 +128,8 @@ class AHSDiagnosis(ComponentETL):
         # Load both data sources
         dad_df = self._load_dad_data()
         ed_df = self._load_ed_data()
+        dad_df = self._filter_to_patient_ids(dad_df, "PATID")
+        ed_df = self._filter_to_patient_ids(ed_df, "PATID")
         
         # Extract diagnosis codes from both sources
         dad_diagnoses = self._extract_diagnosis_codes(dad_df, 'DAD')
@@ -176,7 +178,7 @@ class AHSDiagnosis(ComponentETL):
 
         # Create MEDS core structure
         out = pd.DataFrame({
-            "subject_id": all_diagnoses["PATID"].astype(str),
+            "subject_id": self._subject_id_string(all_diagnoses["PATID"]),
             "time": pd.to_datetime(all_diagnoses["event_time"], errors="coerce"),
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),

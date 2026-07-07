@@ -112,8 +112,18 @@ class ComponentETL(ABC):
         if show_progress:
             print(f"   └─ Loaded {len(df):,} rows")
 
+        patient_ids = self.base_cfg.get("patient_ids")
+        if patient_ids and 'subject_id' in df.columns:
+            original_rows = len(df)
+            df = self._filter_to_patient_ids(df, "subject_id")
+            if show_progress:
+                final_patients = df['subject_id'].nunique()
+                print(
+                    f"   └─ Filtered to {final_patients:,} requested patients, "
+                    f"{len(df):,}/{original_rows:,} rows"
+                )
         # Apply patient limiting if specified
-        if max_patients and 'subject_id' in df.columns:
+        elif max_patients and 'subject_id' in df.columns:
             original_patients = df['subject_id'].nunique()
             unique_patients = df['subject_id'].unique()[:max_patients]
             df = df[df['subject_id'].isin(unique_patients)]
@@ -123,6 +133,31 @@ class ComponentETL(ABC):
                 print(f"   └─ Limited to {final_patients:,}/{original_patients:,} patients, {len(df):,} rows")
 
         return df
+
+    @staticmethod
+    def _subject_id_string(series: pd.Series) -> pd.Series:
+        raw = series.astype("string").str.strip()
+        numeric = pd.to_numeric(raw, errors="coerce")
+        numeric_text = numeric.astype("Int64").astype("string")
+        out = raw.where(numeric.isna(), numeric_text)
+        return out.replace(
+            {
+                "": pd.NA,
+                "<NA>": pd.NA,
+                "nan": pd.NA,
+                "NaN": pd.NA,
+                "None": pd.NA,
+            }
+        )
+
+    def _filter_to_patient_ids(self, df: pd.DataFrame, patient_col: str) -> pd.DataFrame:
+        patient_ids = self.base_cfg.get("patient_ids")
+        if not patient_ids or patient_col not in df.columns:
+            return df
+
+        keep = {str(patient_id) for patient_id in patient_ids}
+        subject_ids = self._subject_id_string(df[patient_col])
+        return df[subject_ids.isin(keep)].copy()
 
 
 class DataSourceETL(ABC):

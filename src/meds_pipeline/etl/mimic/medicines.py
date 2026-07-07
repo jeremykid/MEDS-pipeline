@@ -1,7 +1,7 @@
 # src/meds_pipeline/etl/mimic/medicines.py
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -58,6 +58,8 @@ class MIMICMedicines(ComponentETL):
       - code_system: NDC
       - Rows without valid NDC are dropped
     """
+
+    CHUNK_SIZE = 1_000_000
 
     # ---- helpers ----------------------------------------------------------------
     @staticmethod
@@ -192,17 +194,7 @@ class MIMICMedicines(ComponentETL):
         )
         return joined    
 
-    # ---- core --------------------------------------------------------------
-    def run_core(self) -> pd.DataFrame:
-        """
-        Converts MIMIC-IV hosp.prescriptions to MEDS core format.
-        Only uses NDC for code generation (MEDICINE//NDC//{ndc}).
-        Rows without valid NDC codes are dropped.
-        Uses only starttime (ignores stoptime).
-        """
-        path = self.cfg["raw_paths"]["medicines"]
-        df = self._read_csv_with_progress(path, "Loading medication data")
-
+    def _transform_chunk(self, df: pd.DataFrame) -> pd.DataFrame:
         # Validate required columns
         if "starttime" not in df.columns:
             raise KeyError("No `starttime` column found in hosp.prescriptions")
@@ -265,4 +257,143 @@ class MIMICMedicines(ComponentETL):
 
         return out
 
+    def _filter_by_patient_limit(
+        self,
+        chunk: pd.DataFrame,
+        keep_subjects: Set[str],
+        max_patients: Optional[int],
+    ) -> pd.DataFrame:
+        subject = self._subject_id_string(chunk["subject_id"])
+        valid_subject = subject.notna() & (subject.fillna("").astype(str).str.strip() != "")
+
+        patient_ids = self.base_cfg.get("patient_ids")
+        if patient_ids:
+            keep_subjects.update(str(patient_id) for patient_id in patient_ids)
+            return chunk.loc[valid_subject & subject.astype(str).isin(keep_subjects)].copy()
+
+        if not max_patients:
+            return chunk.loc[valid_subject].copy()
+
+        if len(keep_subjects) < max_patients:
+            ordered_unique = pd.unique(subject[valid_subject])
+            for sid in ordered_unique:
+                sid_str = str(sid)
+                if sid_str not in keep_subjects:
+                    keep_subjects.add(sid_str)
+                    if len(keep_subjects) >= max_patients:
+                        break
+
+        return chunk.loc[valid_subject & subject.astype(str).isin(keep_subjects)].copy()
+
+    @staticmethod
+    def _empty_output() -> pd.DataFrame:
+        return pd.DataFrame(
+            columns=[
+                "subject_id",
+                "time",
+                "event_type",
+                "code",
+                "code_system",
+                "encounter_id",
+                "value_num",
+                "unit",
+                "value_text",
+                "source_table",
+                "provenance_id",
+            ]
+        )
+
+    def iter_core(self):
+        """
+        Yield MIMIC-IV hosp.prescriptions MEDS rows in chunks.
+
+        This keeps patient-bucketed full builds from materializing all
+        prescriptions in memory before staging.
+        """
+        path = self.cfg["raw_paths"]["medicines"]
+        max_patients = self.base_cfg.get("max_patients")
+        show_progress = self.base_cfg.get("show_progress", True)
+        chunk_size = int(self.base_cfg.get("medicines_chunksize", self.CHUNK_SIZE))
+
+        if show_progress:
+            print("📖 Loading medication data (chunked)...")
+
+        header_cols = pd.read_csv(path, nrows=0, low_memory=False).columns.tolist()
+        preferred_cols = [
+            "subject_id",
+            "hadm_id",
+            "pharmacy_id",
+            "row_id",
+            "starttime",
+            "ndc",
+            "dose_val_rx",
+            "dose_unit_rx",
+            "form_val_disp",
+            "form_unit_disp",
+            "prod_strength",
+            "frequency",
+            "doses_per_24_hrs",
+            "route",
+            "drug",
+            "formulary_drug_cd",
+            "gsn",
+        ]
+        usecols = [column for column in preferred_cols if column in header_cols]
+
+        required = {"subject_id", "starttime"}
+        missing_required = sorted(required.difference(usecols))
+        if missing_required:
+            raise KeyError(f"Missing required prescriptions columns: {missing_required}")
+
+        reader = pd.read_csv(
+            path,
+            usecols=usecols,
+            chunksize=chunk_size,
+            low_memory=False,
+        )
+
+        keep_subjects: Set[str] = set()
+        processed_rows = 0
+        emitted_rows = 0
+        emitted_patients: Set[str] = set()
+
+        for i, chunk in enumerate(reader, start=1):
+            processed_rows += len(chunk)
+            chunk = self._filter_by_patient_limit(chunk, keep_subjects, max_patients)
+            if chunk.empty:
+                continue
+
+            out_chunk = self._transform_chunk(chunk)
+            if out_chunk.empty:
+                continue
+
+            emitted_rows += len(out_chunk)
+            emitted_patients.update(out_chunk["subject_id"].dropna().astype(str).unique())
+
+            if show_progress and (i == 1 or i % 10 == 0):
+                patient_msg = f", selected_patients={len(keep_subjects):,}" if max_patients else ""
+                print(
+                    f"   └─ Chunks={i:,}, rows_read={processed_rows:,}, "
+                    f"rows_emitted={emitted_rows:,}{patient_msg}"
+                )
+            yield out_chunk
+
+        if show_progress:
+            print(
+                f"   ✅ Generated {emitted_rows:,} medication events "
+                f"for {len(emitted_patients):,} patients"
+            )
+
+    # ---- core --------------------------------------------------------------
+    def run_core(self) -> pd.DataFrame:
+        """
+        Converts MIMIC-IV hosp.prescriptions to MEDS core format.
+        Only uses NDC for code generation (MEDICINE//NDC//{ndc}).
+        Rows without valid NDC codes are dropped.
+        Uses only starttime (ignores stoptime).
+        """
+        parts = list(self.iter_core())
+        if not parts:
+            return self._empty_output()
+        return pd.concat(parts, ignore_index=True)
 

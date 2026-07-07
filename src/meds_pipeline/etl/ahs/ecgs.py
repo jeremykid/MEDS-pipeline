@@ -87,6 +87,7 @@ class AHSECGs(ComponentETL):
     
     def run_core(self) -> pd.DataFrame:
         df = self._load_ecg_data()
+        df = self._filter_to_patient_ids(df, "PATID")
         
         # Validate required columns
         required_cols = ["PATID", "dateAcquired", "ecgId"]
@@ -110,7 +111,7 @@ class AHSECGs(ComponentETL):
         
         # Create core MEDS structure with value_text containing ECG ID
         out = pd.DataFrame({
-            "subject_id": df_filtered["PATID"].astype(str),
+            "subject_id": self._subject_id_string(df_filtered["PATID"]),
             "time": pd.to_datetime(df_filtered["dateAcquired"], errors="coerce"),
             "event_type": "ECG",
             "code": "ECG//WAVEFORM",  # Standard code for ECG recordings
@@ -123,4 +124,3 @@ class AHSECGs(ComponentETL):
         out["provenance_id"] = (out.index.astype(int) + 1).astype(str)
         
         return out
-

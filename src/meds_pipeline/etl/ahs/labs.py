@@ -254,6 +254,9 @@ class AHSLabs(ComponentETL):
             import pyreadstat
             df, _ = pyreadstat.read_sas7bdat(str(path), output_format="pandas")
             print(f"📊 Loaded {len(df):,} lab records from SAS")
+
+        df = self._filter_to_patient_ids(df, "PATID")
+        print(f"📊 Kept {len(df):,} lab records after patient filtering")
         
         # Clean byte-encoded columns
         byte_cols = ['TEST_CD', 'TEST_NM', 'TEST_RSLT', 'TEST_UOFM']
@@ -283,8 +286,7 @@ class AHSLabs(ComponentETL):
         df['unit'] = df.apply(get_unit, axis=1)
         
         # Build output (aligned with other components: use value_num)
-        subject_id = pd.to_numeric(df['PATID'], errors='coerce').astype('Int64').astype(str)
-        subject_id = subject_id.replace({'<NA>': None, 'nan': None, 'NaN': None, 'None': None})
+        subject_id = self._subject_id_string(df['PATID'])
         raw_result = df['TEST_RSLT'].fillna('').astype(str).str.strip()
 
         if 'TEST_NM' in df.columns:
