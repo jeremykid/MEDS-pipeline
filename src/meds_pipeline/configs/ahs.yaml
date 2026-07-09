@@ -17,6 +17,9 @@ raw_paths:
 keys:
   subject_id: "PATID"
   # ≈: "episode_order"  
+code_description_paths:
+  icd10ca: "/home/weijiesun/MEDS-pipeline/src/resource/ICD_Code_Eng_Desc_10CA2026_V1_0.txt"
+  cci: "/home/weijiesun/MEDS-pipeline/src/resource/CCI_Code_Eng_Desc_CCI2026_V1_0.txt"
 save_paths:
   meds_core: "/data/padmalab_external/special_project/MEDS-dataset/ahs_core.parquet"
   meds_plus: "/data/padmalab_external/special_project/MEDS-dataset/ahs_plus.parquet"

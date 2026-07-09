@@ -1,6 +1,12 @@
 # src/meds_pipeline/etl/mimic/diagnosis.py
 import pandas as pd
 from ..base import ComponentETL
+from ..code_descriptions import (
+    clean_description,
+    descriptions_to_value_text,
+    load_optional_mimic_code_mapper,
+    lookup_descriptions,
+)
 from ..registry import register
 
 '''
@@ -63,14 +69,14 @@ class MIMICDiagnosis(ComponentETL):
     
     def _load_hospital_diagnoses(self) -> pd.DataFrame:
         """Load hospital (inpatient) diagnoses from hosp/diagnoses_icd.csv.gz"""
-        # Load diagnosis dictionary
-        d_icd_diagnoses = pd.read_csv(self.cfg["raw_paths"]["d_icd_diagnoses"], compression='gzip')
-        d_icd_diagnoses = d_icd_diagnoses.drop('icd_version', axis=1, errors='ignore')
-        
         # Load hospital diagnoses
-        hosp_diagnoses = pd.read_csv(self.cfg["raw_paths"]["hosp_diagnoses_icd"], compression='gzip')
+        hosp_diagnoses = pd.read_csv(
+            self.cfg["raw_paths"]["hosp_diagnoses_icd"],
+            compression='infer',
+            low_memory=False,
+            dtype={"icd_code": "string", "icd_version": "string"},
+        )
         hosp_diagnoses = self._filter_to_patient_ids(hosp_diagnoses, "subject_id")
-        hosp_diagnoses = hosp_diagnoses.merge(d_icd_diagnoses, on='icd_code', how='left')
         
         # Load admission data for timing
         admissions_df = self._read_csv_with_progress(
@@ -95,14 +101,14 @@ class MIMICDiagnosis(ComponentETL):
         if 'ed_diagnoses_icd' not in self.cfg["raw_paths"]:
             return pd.DataFrame()  # Return empty DataFrame if not available
         
-        # Load diagnosis dictionary
-        d_icd_diagnoses = pd.read_csv(self.cfg["raw_paths"]["d_icd_diagnoses"], compression='gzip')
-        d_icd_diagnoses = d_icd_diagnoses.drop('icd_version', axis=1, errors='ignore')
-        
         # Load ED diagnoses
-        ed_diagnoses = pd.read_csv(self.cfg["raw_paths"]["ed_diagnoses_icd"], compression='gzip')
+        ed_diagnoses = pd.read_csv(
+            self.cfg["raw_paths"]["ed_diagnoses_icd"],
+            compression='infer',
+            low_memory=False,
+            dtype={"icd_code": "string", "icd_version": "string"},
+        )
         ed_diagnoses = self._filter_to_patient_ids(ed_diagnoses, "subject_id")
-        ed_diagnoses = ed_diagnoses.merge(d_icd_diagnoses, on='icd_code', how='left')
         
         # Load ED stay data for timing
         ed_stays = self._read_csv_with_progress(
@@ -164,6 +170,21 @@ class MIMICDiagnosis(ComponentETL):
             lambda row: self._build_diagnosis_code(row['icd_code'], row['icd_version']),
             axis=1
         )
+        diagnosis_mapper = self._load_diagnosis_mapper()
+        mapper_descriptions = lookup_descriptions(all_diagnoses["meds_code"], diagnosis_mapper)
+        all_diagnoses["code_description"] = mapper_descriptions
+
+        if "long_title" in all_diagnoses.columns:
+            long_title_descriptions = all_diagnoses["long_title"].map(clean_description).astype("string")
+            all_diagnoses["code_description"] = all_diagnoses["code_description"].fillna(
+                long_title_descriptions
+            )
+
+        if "icd_title" in all_diagnoses.columns:
+            ed_descriptions = all_diagnoses["icd_title"].map(clean_description).astype("string")
+            all_diagnoses["code_description"] = ed_descriptions.fillna(
+                all_diagnoses["code_description"]
+            )
         
         # Create 'value_num' column for diagnosis sequence number (string dtype)
         # Priority: use existing seq_num from diagnoses_icd if available
@@ -213,6 +234,15 @@ class MIMICDiagnosis(ComponentETL):
         
         # Ensure value is string dtype
         all_diagnoses['value_num'] = all_diagnoses['value_num'].astype("string")
+        value_text = descriptions_to_value_text(
+            all_diagnoses["code_description"],
+            index=all_diagnoses.index,
+        )
+        source_table = (
+            all_diagnoses["source_table"]
+            if "source_table" in all_diagnoses.columns
+            else pd.Series("diagnosis", index=all_diagnoses.index)
+        )
         
         # Create MEDS core structure
         out = pd.DataFrame({
@@ -221,7 +251,8 @@ class MIMICDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "value_num": all_diagnoses["value_num"],  # string dtype sequence number
-            "source_table": all_diagnoses.get("source_table", "diagnosis"),
+            "value_text": value_text,
+            "source_table": source_table,
         })
         
         # Filter out invalid records
@@ -231,6 +262,10 @@ class MIMICDiagnosis(ComponentETL):
         out = out[out["code"] != "None"].reset_index(drop=True)
         
         return out
+
+    def _load_diagnosis_mapper(self):
+        """Load MIMIC ICD diagnosis descriptions if a dictionary is configured."""
+        return load_optional_mimic_code_mapper(self.cfg, "diagnosis")
     
     def run_plus(self) -> pd.DataFrame:
         """
@@ -246,39 +281,27 @@ class MIMICDiagnosis(ComponentETL):
     def _assemble_diagnosis_metadata(df: pd.DataFrame) -> pd.Series:
         """
         Create human-readable metadata for diagnosis records, e.g.:
-        "table=hosp.diagnoses_icd | hadm_id=22595853 | seq=1 | icd_version=9 | desc=Portal hypertension"
+        "table=hosp.diagnoses_icd | hadm_id=22595853 | seq=1 | icd_version=9"
         or
-        "table=ed.diagnosis | stay_id=33258284 | seq=1 | icd_version=10 | desc=Abdominal pain"
+        "table=ed.diagnosis | stay_id=33258284 | seq=1 | icd_version=10"
         """
         parts = []
 
         if "source_table" in df.columns:
-            table_txt = "table=" + df["source_table"].astype(str)
-            parts.append(table_txt)
+            parts.append(MIMICDiagnosis._metadata_part(df["source_table"], "table"))
         
         # Add encounter ID (hadm_id for hospital, stay_id for ED)
         if "hadm_id" in df.columns:
-            hadm_txt = "hadm_id=" + df["hadm_id"].fillna("").astype(str)
-            parts.append(hadm_txt)
+            parts.append(MIMICDiagnosis._metadata_part(df["hadm_id"], "hadm_id"))
         
         if "stay_id" in df.columns:
-            stay_txt = "stay_id=" + df["stay_id"].fillna("").astype(str)
-            parts.append(stay_txt)
+            parts.append(MIMICDiagnosis._metadata_part(df["stay_id"], "stay_id"))
             
         if "seq_num" in df.columns:
-            seq_txt = "seq=" + df["seq_num"].astype(str)
-            parts.append(seq_txt)
+            parts.append(MIMICDiagnosis._metadata_part(df["seq_num"], "seq"))
             
         if "icd_version" in df.columns:
-            version_txt = "icd_version=" + df["icd_version"].astype(str)
-            parts.append(version_txt)
-            
-        if "long_title" in df.columns:
-            # Truncate long descriptions for readability
-            desc = df["long_title"].fillna("").astype(str)
-            desc = desc.apply(lambda x: x[:50] + "..." if len(x) > 50 else x)
-            desc_txt = "desc=" + desc
-            parts.append(desc_txt)
+            parts.append(MIMICDiagnosis._metadata_part(df["icd_version"], "icd_version"))
             
         if not parts:
             return pd.Series([""] * len(df), index=df.index)
@@ -290,3 +313,9 @@ class MIMICDiagnosis(ComponentETL):
             axis=1
         )
         return metadata
+
+    @staticmethod
+    def _metadata_part(values: pd.Series, label: str) -> pd.Series:
+        text = values.astype("string").str.strip()
+        text = text.mask(text.isna() | (text == "") | (text.str.lower() == "nan"))
+        return (label + "=" + text).astype("string")

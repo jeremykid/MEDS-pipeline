@@ -83,10 +83,10 @@ def _parse_fixed_width_line(line: str) -> tuple:
     """
     Parse a fixed-width format line into (code, short_desc, long_desc).
     
-    The format appears to be:
-    - First column: code (variable length, ends when multiple spaces appear)
-    - Second column: short description
-    - Third column: long description (padded with spaces)
+    The Canadian ICD-10-CA/CCI files are whitespace-aligned text files.  The
+    first whitespace-delimited token is always the code, but the gap between
+    code and short description is not always two or more spaces.  After the
+    code, the short and long descriptions are separated by wider padding.
     
     Args:
         line: A single line from the file
@@ -100,23 +100,35 @@ def _parse_fixed_width_line(line: str) -> tuple:
     if not line:
         return None, None
     
-    # Split by 2+ consecutive spaces to separate columns
-    parts = re.split(r'\s{2,}', line)
-    
-    if len(parts) >= 3:
-        # Format: code, short_desc, long_desc
-        code = parts[0].strip()
-        # Use long description (last part), fall back to short if needed
-        description = parts[-1].strip() if parts[-1].strip() else parts[1].strip()
-        return code, description
-    elif len(parts) == 2:
-        # Format: code, description
-        return parts[0].strip(), parts[1].strip()
-    elif len(parts) == 1:
-        # Only code, no description
-        return parts[0].strip(), ""
-    
-    return None, None
+    try:
+        code, remainder = line.split(maxsplit=1)
+    except ValueError:
+        return line.strip(), ""
+
+    # Official ICD-10-CA and CCI English description resources are fixed-width:
+    #   ICD-10-CA: code field 7 chars + short description 40 chars + long desc
+    #   CCI:       code field 10 chars + short description 60 chars + long desc
+    # Some short descriptions fill their field completely, leaving no repeated
+    # spaces before the long description, so splitting only on padding merges
+    # the short and long text.  Use the fixed long-description column when the
+    # code family is recognizable, then fall back to padding-based parsing for
+    # custom files.
+    if code and code[0].isalpha() and len(line) > 47:
+        description = line[47:].strip()
+        if description:
+            return code.strip(), description
+    if code and code[0].isdigit() and len(line) > 70:
+        description = line[70:].strip()
+        if description:
+            return code.strip(), description
+
+    parts = [part.strip() for part in re.split(r'\s{2,}', remainder.strip()) if part.strip()]
+    if not parts:
+        return code.strip(), ""
+
+    # Prefer the long description, which is the final padded column.  If the
+    # file only has one description column, use it directly.
+    return code.strip(), parts[-1]
 
 
 def _read_file_robust(

@@ -2,6 +2,12 @@
 import pandas as pd
 import pyreadstat
 from ..base import ComponentETL
+from ..code_descriptions import (
+    default_ahs_codebook_paths,
+    descriptions_to_value_text,
+    load_optional_code_mapper,
+    lookup_descriptions,
+)
 from ..registry import register
 
 '''
@@ -144,6 +150,11 @@ class AHSDiagnosis(ComponentETL):
         
         # Build MEDS-compliant diagnosis codes
         all_diagnoses['meds_code'] = all_diagnoses['diagnosis_code'].apply(self._build_diagnosis_code)
+        diagnosis_mapper = self._load_diagnosis_mapper()
+        all_diagnoses["code_description"] = lookup_descriptions(
+            all_diagnoses["diagnosis_code"],
+            diagnosis_mapper,
+        )
         
         # Create 'value_num' column for diagnosis sequence number (string dtype)
         # Priority: use existing sequence_num extracted from DXCODE columns
@@ -175,6 +186,10 @@ class AHSDiagnosis(ComponentETL):
         
         # Ensure value is string dtype
         all_diagnoses['value_num'] = all_diagnoses['value_num'].astype("string")
+        value_text = descriptions_to_value_text(
+            all_diagnoses["code_description"],
+            index=all_diagnoses.index,
+        )
 
         # Create MEDS core structure
         out = pd.DataFrame({
@@ -183,6 +198,7 @@ class AHSDiagnosis(ComponentETL):
             "event_type": "diagnosis",
             "code": all_diagnoses["meds_code"].astype(str),
             "value_num": all_diagnoses["value_num"],  # string dtype sequence number
+            "value_text": value_text,
             "source_table": all_diagnoses["source_table"].astype(str),
         })
         
@@ -193,6 +209,14 @@ class AHSDiagnosis(ComponentETL):
         out = out[out["code"] != "None"].reset_index(drop=True)
         
         return out
+
+    def _load_diagnosis_mapper(self):
+        """Load ICD-10-CA descriptions if a mapping file is configured."""
+        return load_optional_code_mapper(
+            self.cfg,
+            "icd10ca",
+            default_paths=(default_ahs_codebook_paths()["icd10ca"],),
+        )
     
     def run_plus(self) -> pd.DataFrame:
         """
@@ -212,28 +236,17 @@ class AHSDiagnosis(ComponentETL):
         or
         "table=rmt22884_ed_20211105 | seq=5 | dx_col=DXCODE5"
         """
-        parts = []
+        text = pd.Series(pd.NA, index=df.index, dtype="string")
 
-        # Add source table (DAD vs ED)
         if "source_table" in df.columns:
-            table_txt = "table=" + df["source_table"].astype(str)
-            parts.append(table_txt)
-            
+            text = "table=" + df["source_table"].astype("string")
+        else:
+            text = pd.Series("", index=df.index, dtype="string")
+
         if "sequence_num" in df.columns:
-            seq_txt = "seq=" + df["sequence_num"].astype(str)
-            parts.append(seq_txt)
-            
+            text = text + " | seq=" + df["sequence_num"].astype("string")
+
         if "dx_sequence" in df.columns:
-            dx_col_txt = "dx_col=" + df["dx_sequence"].astype(str)
-            parts.append(dx_col_txt)
-            
-        if not parts:
-            return pd.Series([""] * len(df), index=df.index)
-            
-        # Combine all parts with " | " separator
-        combined = pd.concat(parts, axis=1)
-        metadata = combined.apply(
-            lambda row: " | ".join([str(x) for x in row.tolist() if pd.notna(x) and str(x).strip()]),
-            axis=1
-        )
-        return metadata
+            text = text + " | dx_col=" + df["dx_sequence"].astype("string")
+
+        return text

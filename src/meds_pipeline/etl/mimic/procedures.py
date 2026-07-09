@@ -1,6 +1,11 @@
 # src/meds_pipeline/etl/mimic/procedures.py
 import pandas as pd
 from ..base import ComponentETL
+from ..code_descriptions import (
+    descriptions_to_value_text,
+    load_optional_mimic_code_mapper,
+    lookup_descriptions,
+)
 from ..registry import register
 
 '''
@@ -69,15 +74,23 @@ class MIMICProcedures(ComponentETL):
             DataFrame with columns: subject_id, time, event_type, code, value_num
         """
         # Load procedures data
-        procedures_df = self._read_csv_with_progress(
+        procedures_df = pd.read_csv(
             self.cfg["raw_paths"]["procedures_icd"],
-            "Loading procedures data"
+            compression="infer",
+            low_memory=False,
+            dtype={"icd_code": "string", "icd_version": "string"},
         )
+        procedures_df = self._filter_to_patient_ids(procedures_df, "subject_id")
         
         # Build MEDS-compliant procedure codes
         procedures_df['meds_code'] = procedures_df.apply(
             lambda row: self._build_procedure_code(row['icd_code'], row['icd_version']),
             axis=1
+        )
+        procedure_mapper = self._load_procedure_mapper()
+        procedures_df["code_description"] = lookup_descriptions(
+            procedures_df["meds_code"],
+            procedure_mapper,
         )
         
         # Create 'value_num' column for procedure sequence number (string dtype)
@@ -112,6 +125,10 @@ class MIMICProcedures(ComponentETL):
         
         # Ensure value is string dtype
         procedures_df['value_num'] = procedures_df['value_num'].astype("string")
+        value_text = descriptions_to_value_text(
+            procedures_df["code_description"],
+            index=procedures_df.index,
+        )
         
         # Use chartdate as the event time
         # chartdate represents when the procedure was performed/charted
@@ -126,6 +143,7 @@ class MIMICProcedures(ComponentETL):
             "event_type": "procedures",
             "code": procedures_df["meds_code"].astype(str),
             "value_num": procedures_df["value_num"],  # string dtype sequence number
+            "value_text": value_text,
             "source_table": "hosp.procedures_icd",
         })
         
@@ -136,6 +154,38 @@ class MIMICProcedures(ComponentETL):
         out = out[out["code"] != "None"].reset_index(drop=True)
         
         return out
+
+    def _load_procedure_mapper(self):
+        """Load MIMIC ICD procedure descriptions if a dictionary is configured."""
+        return load_optional_mimic_code_mapper(self.cfg, "procedure")
+
+    @staticmethod
+    def _assemble_procedure_metadata(df: pd.DataFrame) -> pd.Series:
+        """Create human-readable metadata for procedure records."""
+        parts = [pd.Series("table=hosp.procedures_icd", index=df.index, dtype="string")]
+
+        if "hadm_id" in df.columns:
+            parts.append(MIMICProcedures._metadata_part(df["hadm_id"], "hadm_id"))
+
+        if "seq_num" in df.columns:
+            parts.append(MIMICProcedures._metadata_part(df["seq_num"], "seq"))
+
+        if "icd_version" in df.columns:
+            parts.append(MIMICProcedures._metadata_part(df["icd_version"], "icd_version"))
+
+        combined = pd.concat(parts, axis=1)
+        return combined.apply(
+            lambda row: " | ".join(
+                [str(x) for x in row.tolist() if pd.notna(x) and str(x).strip()]
+            ),
+            axis=1,
+        ).astype("string")
+
+    @staticmethod
+    def _metadata_part(values: pd.Series, label: str) -> pd.Series:
+        text = values.astype("string").str.strip()
+        text = text.mask(text.isna() | (text == "") | (text.str.lower() == "nan"))
+        return (label + "=" + text).astype("string")
     
     def run_plus(self) -> pd.DataFrame:
         """

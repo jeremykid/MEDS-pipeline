@@ -2,6 +2,12 @@
 import pandas as pd
 import pyreadstat
 from ..base import ComponentETL
+from ..code_descriptions import (
+    default_ahs_codebook_paths,
+    descriptions_to_value_text,
+    load_optional_code_mapper,
+    lookup_descriptions,
+)
 from ..registry import register
 
 '''
@@ -154,10 +160,19 @@ class AHSProcedures(ComponentETL):
         
         # Build MEDS-compliant procedure codes
         procedures['meds_code'] = procedures['procedure_code'].apply(self._build_procedure_code)
+        procedure_mapper = self._load_procedure_mapper()
+        procedures["code_description"] = lookup_descriptions(
+            procedures["procedure_code"],
+            procedure_mapper,
+        )
         
         # Create 'value_num' column for procedure sequence number (string dtype)
         # Use the sequence_num extracted from PROCCODE column index
         procedures['value_num'] = procedures['sequence_num'].astype('Int64').astype("string")
+        value_text = descriptions_to_value_text(
+            procedures["code_description"],
+            index=procedures.index,
+        )
         
         # Create MEDS core structure
         out = pd.DataFrame({
@@ -166,6 +181,7 @@ class AHSProcedures(ComponentETL):
             "event_type": "procedures",
             "code": procedures["meds_code"].astype(str),
             "value_num": procedures["value_num"],  # string dtype sequence number
+            "value_text": value_text,
             "source_table": "rmt22884_dad_20211105",
         })
         
@@ -176,6 +192,22 @@ class AHSProcedures(ComponentETL):
         out = out[out["code"] != "None"].reset_index(drop=True)
         
         return out
+
+    def _load_procedure_mapper(self):
+        """Load CCI descriptions if a mapping file is configured."""
+        return load_optional_code_mapper(
+            self.cfg,
+            "cci",
+            default_paths=(default_ahs_codebook_paths()["cci"],),
+        )
+
+    @staticmethod
+    def _assemble_procedure_metadata(df: pd.DataFrame) -> pd.Series:
+        """Create human-readable metadata for AHS procedure records."""
+        text = pd.Series("table=rmt22884_dad_20211105", index=df.index, dtype="string")
+        if "sequence_num" in df.columns:
+            text = text + " | seq=" + df["sequence_num"].astype("string")
+        return text
     
     def run_plus(self) -> pd.DataFrame:
         """

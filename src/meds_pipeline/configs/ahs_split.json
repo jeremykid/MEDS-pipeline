@@ -1,0 +1,22 @@
+{
+  "seed": 42,
+  "dev_ratio": 0.6,
+  "holdout_ratio": 0.4,
+  "total_patients": 274486,
+  "dev_patients": 164691,
+  "holdout_patients": 109795,
+  "format": "parquet",
+  "schema": {
+    "index_name": "patient_id",
+    "index_type": "string",
+    "columns": {
+      "split": {
+        "type": "categorical",
+        "categories": [
+          "development",
+          "holdout"
+        ]
+      }
+    }
+  }
+}
