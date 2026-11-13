@@ -262,6 +262,55 @@ PYTHONPATH=src python src/split_patients.py --source mimic --cfg mimic.yaml --fo
 2. Check output statistics for each component
 3. Gradually increase patient count until you find the appropriate scale
 
+## Text Embeddings (offline)
+
+Install with `pip install -r requirements.txt`. Generate frozen code embeddings
+with BioLORD (default) or another text encoder:
+
+```bash
+python src/build_code_embeddings.py \
+  --source mimic \
+  --meds-data /path/to/meds_buckets \
+  --output-root /path/to/ehr_encoder_artifacts \
+  --event-types diagnosis,procedures,lab --artifact-name dx_proc_lab \
+  --revision 167aab527b238a50ca65224e6319215d2ff4fc9f \
+  --device cuda --batch-size 128
+```
+
+Use `--source ahs` for AHS. Input accepts a parquet file or a directory containing
+`bucket*.parquet` files. Lab text uses test names, excluding raw results.
+Use `--dry-run` to inspect vocabulary or `--encoder mock` for a model-free smoke test.
+L2 normalization is enabled by default; disable with `--no-normalize-embeddings`.
+
+Outputs: `code_vocab.parquet`, `embeddings.npy`, and `manifest.json` under
+`{output_root}/code_embeddings/v1/{artifact_name}/`. Vectors are float32 `[N, D]`;
+PAD is row 0, UNK is row 1. Use distinct artifact names for different encoders;
+replacing an existing output requires `--overwrite`.
+
+### Replacing the text encoder
+
+For SentenceTransformer models, change `--model` and `--revision`. For other
+backends, implement `TextEncoder` in `meds_pipeline.text_embeddings.base`:
+provide `spec: EncoderSpec` and `encode(texts, batch_size, show_progress_bar)`,
+returning finite float32 `[N, D]` vectors in input order.
+
+Register a factory in a wrapper under `src/`, then run it with `--encoder my_backend`:
+
+```python
+from meds_pipeline.text_embeddings import register_encoder
+from build_code_embeddings import main
+from my_encoder import MyTextEncoder
+
+def make_encoder(*, model, device, revision, normalize):
+    return MyTextEncoder(model_name=model, device=device, revision=revision,
+                         normalize_embeddings=normalize)
+
+register_encoder("my_backend", make_encoder, default_model="my-model")
+main()
+```
+
+Changing the encoder may require a new downstream projection and sidecar contract.
+
 TODO:
 
 write build_schema

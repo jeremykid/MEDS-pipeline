@@ -2,3 +2,10 @@ click
 pandas
 pyyaml
 tqdm
+numpy
+pyarrow
+# Text embedding generation (BioLORD by default).
+sentence-transformers>=3,<6
+transformers>=4.41,<6
+huggingface-hub>=0.23,<2
+regex>=2023.0
