@@ -264,48 +264,37 @@ PYTHONPATH=src python src/split_patients.py --source mimic --cfg mimic.yaml --fo
 
 ## Text Embeddings (offline)
 
-Install with `pip install -r requirements.txt`. The
-`meds_pipeline.text_embeddings` package converts MEDS clinical code descriptions
-to frozen vectors. BioLORD is the default model; the pipeline supports other
-text encoders through the same interface. Encoder dependencies are imported
-only when the real backend is constructed.
+Install with `pip install -r requirements.txt`. Generate frozen code embeddings
+with BioLORD (default) or another text encoder:
 
 ```bash
 python src/build_code_embeddings.py \
   --source mimic \
   --meds-data /path/to/meds_buckets \
   --output-root /path/to/ehr_encoder_artifacts \
-  --event-types diagnosis,procedures,lab \
-  --artifact-name dx_proc_lab \
-  --encoder sentence_transformers --model FremyCompany/BioLORD-2023 \
+  --event-types diagnosis,procedures,lab --artifact-name dx_proc_lab \
   --revision 167aab527b238a50ca65224e6319215d2ff4fc9f \
   --device cuda --batch-size 128
 ```
 
-Use `--source ahs` for AHS. Input accepts a parquet file or a directory of
-`bucket*.parquet` files. By default only diagnosis/procedures are selected.
-Lab text retains the test name and excludes raw results; numeric measurements
-stay separate. `--dry-run` scans the vocabulary without encoding or writing.
-`--encoder mock` runs a deterministic smoke test without model downloads.
-Normalization defaults to L2; disable with `--no-normalize-embeddings`.
+Use `--source ahs` for AHS. Input accepts a parquet file or a directory containing
+`bucket*.parquet` files. Lab text uses test names, excluding raw results.
+Use `--dry-run` to inspect vocabulary or `--encoder mock` for a model-free smoke test.
+L2 normalization is enabled by default; disable with `--no-normalize-embeddings`.
 
-Outputs are `code_vocab.parquet`, `embeddings.npy`, and `manifest.json` under
-`{output_root}/code_embeddings/v1/{artifact_name}/`. Vectors are float32
-`[vocab_size, embedding_dim]`, with PAD at row 0 and UNK at row 1. The manifest
-records model identity, revision, dimension, normalization, and content hashes.
-Use a different artifact name for each model/configuration; replacing an
-existing output requires `--overwrite`.
+Outputs: `code_vocab.parquet`, `embeddings.npy`, and `manifest.json` under
+`{output_root}/code_embeddings/v1/{artifact_name}/`. Vectors are float32 `[N, D]`;
+PAD is row 0, UNK is row 1. Use distinct artifact names for different encoders;
+replacing an existing output requires `--overwrite`.
 
 ### Replacing the text encoder
 
-For a compatible SentenceTransformer model, change `--model` and `--revision`.
-For a different backend, implement `TextEncoder` from
-`meds_pipeline.text_embeddings.base`: expose an `EncoderSpec` and
-`encode(texts, batch_size=64, show_progress_bar=True)`, returning finite float32
-`[N, D]` vectors in input order. Report the model's actual dimension and pooling
-in its spec; no dimension is hard-coded into the vocabulary builder.
+For SentenceTransformer models, change `--model` and `--revision`. For other
+backends, implement `TextEncoder` in `meds_pipeline.text_embeddings.base`:
+provide `spec: EncoderSpec` and `encode(texts, batch_size, show_progress_bar)`,
+returning finite float32 `[N, D]` vectors in input order.
 
-Register a factory before invoking the CLI's `main(argv)` from a Python wrapper:
+Register a factory in a wrapper under `src/`, then run it with `--encoder my_backend`:
 
 ```python
 from meds_pipeline.text_embeddings import register_encoder
@@ -313,26 +302,14 @@ from build_code_embeddings import main
 from my_encoder import MyTextEncoder
 
 def make_encoder(*, model, device, revision, normalize):
-    return MyTextEncoder(
-        model_name=model, device=device, revision=revision,
-        normalize_embeddings=normalize,
-    )
+    return MyTextEncoder(model_name=model, device=device, revision=revision,
+                         normalize_embeddings=normalize)
 
 register_encoder("my_backend", make_encoder, default_model="my-model")
-main()  # This wrapper accepts --encoder my_backend and the usual CLI arguments.
+main()
 ```
 
-Place the wrapper in `src/` or run with `PYTHONPATH=src`. Factories should accept
-only supported options explicitly and reject unsupported settings. Registration
-rejects duplicate names. Vocabulary extraction, PAD handling, and artifact
-validation stay outside encoder implementations.
-
-The shared BioLORD sidecar builder lives in the `cardio-context` repository:
-`scripts/data_pipeline/build_shared_biolord_patient_cache_sidecar.py`. It maps
-patient-cache IDs to rows in this artifact and checks coverage; it does not
-generate embeddings. A different encoder or dimension may require a new
-downstream projection and contract, even though the artifact file format remains
-the same. Legacy BioLORD manifests remain readable.
+Changing the encoder may require a new downstream projection and sidecar contract.
 
 TODO:
 
