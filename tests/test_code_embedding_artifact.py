@@ -8,28 +8,27 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from meds_pipeline.artifacts.text_encoders import (
+from meds_pipeline.text_embeddings.encoders import (
     MockEncoder,
-    SentenceTransformerEncoder,
-    encode_vocab_embeddings,
 )
-from meds_pipeline.artifacts.code_embedding_artifact import (
+from meds_pipeline.text_embeddings.code_embedding_artifact import (
     ARTIFACT_SCHEMA_VERSION,
     LEGACY_SCHEMA_VERSION,
     build_manifest,
     embed_text_hash,
     embedding_hash,
+    encode_vocab_embeddings,
     load_artifact,
     normalize_manifest,
     publish_artifact,
     validate_artifact,
 )
-from meds_pipeline.artifacts.code_vocab_extractor import (
+from meds_pipeline.text_embeddings.code_vocab_extractor import (
     clean_lab_value_text,
     extract_code_vocab,
     vocab_hash_from_codes,
 )
-from meds_pipeline.artifacts.embed_text import (
+from meds_pipeline.text_embeddings.embed_text import (
     MISSING_DESCRIPTION_SENTINEL,
     PAD_CODE,
     PAD_ID,
@@ -231,7 +230,9 @@ def test_lab_vocab_uses_test_names_without_raw_results(tmp_path: Path):
 
     glucose = vocab.loc[vocab["code"] == "LAB//MIMIC//50931"].iloc[0]
     assert glucose["description"] == "Glucose"
-    assert glucose["embed_text"] == "lab | MIMIC_LAB_ITEMID | LAB//MIMIC//50931 | Glucose"
+    assert (
+        glucose["embed_text"] == "lab | MIMIC_LAB_ITEMID | LAB//MIMIC//50931 | Glucose"
+    )
     assert int(glucose["n_description_variants"]) == 1
 
     hemoglobin = vocab.loc[vocab["code"] == "LAB//LOINC//718-7"].iloc[0]
@@ -255,8 +256,12 @@ def test_clean_lab_value_text_handles_old_and_new_formats():
 def test_mock_encoder_is_deterministic_and_pad_zero():
     encoder = MockEncoder(embed_dim=8)
     texts = [UNK_EMBED_TEXT, "diagnosis | ICD//10 | X | foo", ""]
-    a = encode_vocab_embeddings(["", *texts], encoder, pad_id=PAD_ID, show_progress_bar=False)
-    b = encode_vocab_embeddings(["", *texts], encoder, pad_id=PAD_ID, show_progress_bar=False)
+    a = encode_vocab_embeddings(
+        ["", *texts], encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
+    b = encode_vocab_embeddings(
+        ["", *texts], encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
     assert a.shape == (4, 8)
     assert np.array_equal(a, b)
     assert np.allclose(a[PAD_ID], 0.0)
@@ -506,9 +511,12 @@ def test_cli_publish_requires_overwrite(tmp_path: Path):
     _write_meds_single_dx(meds_dir)
     output_root = tmp_path / "out"
     args = [
-        "--source", "mimic",
-        "--meds-data", str(meds_dir),
-        "--output-root", str(output_root),
+        "--source",
+        "mimic",
+        "--meds-data",
+        str(meds_dir),
+        "--output-root",
+        str(output_root),
         "--mock-encoder",
     ]
     assert main(args) == 0
@@ -529,14 +537,39 @@ def test_mock_encoder_cli_resolution_equivalence(tmp_path: Path):
 
     out_flag = tmp_path / "flag"
     out_kind = tmp_path / "kind"
-    assert main([
-        "--source", "mimic", "--meds-data", str(meds_dir),
-        "--output-root", str(out_flag), "--mock-encoder", "--mock-embed-dim", "8",
-    ]) == 0
-    assert main([
-        "--source", "mimic", "--meds-data", str(meds_dir),
-        "--output-root", str(out_kind), "--encoder", "mock", "--mock-embed-dim", "8",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--source",
+                "mimic",
+                "--meds-data",
+                str(meds_dir),
+                "--output-root",
+                str(out_flag),
+                "--mock-encoder",
+                "--mock-embed-dim",
+                "8",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "--source",
+                "mimic",
+                "--meds-data",
+                str(meds_dir),
+                "--output-root",
+                str(out_kind),
+                "--encoder",
+                "mock",
+                "--mock-embed-dim",
+                "8",
+            ]
+        )
+        == 0
+    )
 
     a = load_artifact(out_flag / "code_embeddings" / "v1" / "dx_proc")
     b = load_artifact(out_kind / "code_embeddings" / "v1" / "dx_proc")
@@ -551,8 +584,12 @@ def test_embed_text_hash_and_embedding_hash_deterministic(tmp_path: Path):
     result = extract_code_vocab(meds_dir)
     encoder = MockEncoder(embed_dim=8)
     texts = result.vocab["embed_text"].fillna("").astype(str).tolist()
-    emb1 = encode_vocab_embeddings(texts, encoder, pad_id=PAD_ID, show_progress_bar=False)
-    emb2 = encode_vocab_embeddings(texts, encoder, pad_id=PAD_ID, show_progress_bar=False)
+    emb1 = encode_vocab_embeddings(
+        texts, encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
+    emb2 = encode_vocab_embeddings(
+        texts, encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
     assert embed_text_hash(texts) == embed_text_hash(texts)
     assert embedding_hash(emb1) == embedding_hash(emb2)
     texts_changed = list(texts)
@@ -566,7 +603,9 @@ def test_build_manifest_schema_v1_fields(tmp_path: Path):
     result = extract_code_vocab(meds_dir)
     encoder = MockEncoder(embed_dim=8)
     texts = result.vocab["embed_text"].fillna("").astype(str).tolist()
-    embeddings = encode_vocab_embeddings(texts, encoder, pad_id=PAD_ID, show_progress_bar=False)
+    embeddings = encode_vocab_embeddings(
+        texts, encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
     manifest = _build_manifest_for(result, encoder, embeddings, source="mimic")
 
     assert manifest["artifact_schema_version"] == ARTIFACT_SCHEMA_VERSION
@@ -584,7 +623,9 @@ def test_load_legacy_biolord_manifest(tmp_path: Path):
     result = extract_code_vocab(meds_dir)
     encoder = MockEncoder(embed_dim=8)
     texts = result.vocab["embed_text"].fillna("").astype(str).tolist()
-    embeddings = encode_vocab_embeddings(texts, encoder, pad_id=PAD_ID, show_progress_bar=False)
+    embeddings = encode_vocab_embeddings(
+        texts, encoder, pad_id=PAD_ID, show_progress_bar=False
+    )
 
     # Construct a legacy-style manifest by hand (old build_manifest shape).
     legacy_manifest = {
@@ -620,9 +661,3 @@ def test_load_legacy_biolord_manifest(tmp_path: Path):
 
     # Legacy manifest (no embed_text_hash/embedding_hash) should still validate.
     validate_artifact(result.vocab, embeddings, legacy_manifest)
-
-
-def test_biolord_encoder_alias_is_sentence_transformer():
-    import meds_pipeline.artifacts.biolord_encoder as legacy_mod
-
-    assert legacy_mod.BioLORDEncoder is SentenceTransformerEncoder

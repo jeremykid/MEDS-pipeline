@@ -1,4 +1,4 @@
-"""Extract a deterministic diagnosis/procedure code vocabulary from MEDS parquet."""
+"""Extract a deterministic clinical code vocabulary from MEDS parquet."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Iterable, Sequence
 
 import pandas as pd
 
-from meds_pipeline.artifacts.embed_text import (
+from meds_pipeline.text_embeddings.embed_text import (
     PAD_CODE,
     PAD_ID,
     UNK_CODE,
@@ -90,7 +90,9 @@ def vocab_hash_from_codes(codes: Iterable[str]) -> str:
     return hashlib.sha256("\n".join(ordered).encode("utf-8")).hexdigest()
 
 
-def clean_value_text_for_embedding(event_type: object, value_text: object) -> str | None:
+def clean_value_text_for_embedding(
+    event_type: object, value_text: object
+) -> str | None:
     """Return the description text used for embeddings, with lab raw values removed."""
     if str(event_type).strip().lower() == LAB_EVENT_TYPE:
         return clean_lab_value_text(value_text)
@@ -168,7 +170,11 @@ def extract_code_vocab(
             continue
         sub = df.loc[mask, columns].copy()
         sub["code"] = sub["code"].astype("string").str.strip()
-        sub = sub[sub["code"].notna() & sub["code"].ne("") & ~sub["code"].isin(["nan", "None", "<NA>"])]
+        sub = sub[
+            sub["code"].notna()
+            & sub["code"].ne("")
+            & ~sub["code"].isin(["nan", "None", "<NA>"])
+        ]
         if sub.empty:
             continue
 
@@ -182,7 +188,11 @@ def extract_code_vocab(
 
         n_events.update(sub["code"].astype(str).tolist())
 
-        et_pairs = sub.groupby(["code", "event_type"], sort=False).size().reset_index(name="count")
+        et_pairs = (
+            sub.groupby(["code", "event_type"], sort=False)
+            .size()
+            .reset_index(name="count")
+        )
         for row in et_pairs.itertuples(index=False):
             event_type_counts[str(row.code)][str(row.event_type)] += int(row.count)
 
@@ -193,7 +203,11 @@ def extract_code_vocab(
                 resolve_code_system(str(row.code), row.code_system)
             )
 
-        src = sub[["code", "source_table"]].dropna(subset=["source_table"]).drop_duplicates()
+        src = (
+            sub[["code", "source_table"]]
+            .dropna(subset=["source_table"])
+            .drop_duplicates()
+        )
         for row in src.itertuples(index=False):
             text = str(row.source_table).strip()
             if text and text.lower() not in {"nan", "none", "<na>"}:
@@ -239,7 +253,9 @@ def extract_code_vocab(
     next_id = UNK_ID + 1
     for code in real_codes:
         et_counter = event_type_counts[code]
-        event_type = sorted(et_counter.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        event_type = sorted(et_counter.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
         systems = sorted(code_systems[code])
         code_system = systems[0] if systems else resolve_code_system(code, None)
         desc_variants = sorted(descriptions[code])

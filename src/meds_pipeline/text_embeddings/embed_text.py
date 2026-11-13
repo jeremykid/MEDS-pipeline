@@ -1,4 +1,4 @@
-"""Deterministic BioLORD embed-text templates for MEDS clinical codes."""
+"""Deterministic text templates for MEDS clinical code embeddings."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ PAD_CODE = "<PAD>"
 UNK_CODE = "UNKNOWN"
 
 TEXT_TEMPLATE_VERSION = "v1"
-TEXT_TEMPLATE = "{event_type} | {code_system} | {code} | {description_or_no_description}"
+TEXT_TEMPLATE = (
+    "{event_type} | {code_system} | {code} | {description_or_no_description}"
+)
 MISSING_DESCRIPTION_SENTINEL = "[no description]"
 UNK_EMBED_TEXT = f"unknown | unknown | {UNK_CODE} | {MISSING_DESCRIPTION_SENTINEL}"
 
@@ -38,7 +40,9 @@ def parse_code_system(code: str) -> str:
 
 def resolve_code_system(code: str, code_system: object | None = None) -> str:
     """Prefer a non-empty parquet code_system; otherwise parse from ``code``."""
-    if code_system is not None and not (isinstance(code_system, float) and pd.isna(code_system)):
+    if code_system is not None and not (
+        isinstance(code_system, float) and pd.isna(code_system)
+    ):
         try:
             if pd.isna(code_system):
                 pass

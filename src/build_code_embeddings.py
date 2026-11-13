@@ -4,7 +4,7 @@
 Default encoder backend: ``sentence_transformers``.
 Default model: ``FremyCompany/BioLORD-2023``.
 BioLORD is the default model, not the only one; swap it with ``--model`` or add
-a new backend via ``meds_pipeline.artifacts.encoder_registry``.
+a new backend via ``meds_pipeline.text_embeddings.registry``.
 """
 
 from __future__ import annotations
@@ -20,29 +20,29 @@ _SRC = Path(__file__).resolve().parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from meds_pipeline.artifacts.code_embedding_artifact import (  # noqa: E402
+from meds_pipeline.text_embeddings.code_embedding_artifact import (  # noqa: E402
     DEFAULT_ARTIFACT_NAME,
     artifact_directory,
     build_manifest,
     embed_text_hash,
     embedding_hash,
+    encode_vocab_embeddings,
     git_commit_or_unknown,
     publish_artifact,
     validate_artifact,
 )
-from meds_pipeline.artifacts.code_vocab_extractor import (  # noqa: E402
+from meds_pipeline.text_embeddings.code_vocab_extractor import (  # noqa: E402
     TARGET_EVENT_TYPES,
     extract_code_vocab,
 )
-from meds_pipeline.artifacts.embed_text import PAD_ID  # noqa: E402
-from meds_pipeline.artifacts.encoder_registry import (  # noqa: E402
+from meds_pipeline.text_embeddings.embed_text import PAD_ID  # noqa: E402
+from meds_pipeline.text_embeddings.registry import (  # noqa: E402
     available_encoders,
     create_encoder,
     default_model_for,
 )
-from meds_pipeline.artifacts.text_encoders import (  # noqa: E402
+from meds_pipeline.text_embeddings.encoders import (  # noqa: E402
     DEFAULT_ENCODER_KIND,
-    encode_vocab_embeddings,
 )
 
 
@@ -88,6 +88,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument(
+        "--revision",
+        default=None,
+        help="Model revision or commit passed to the encoder loader",
+    )
+    parser.add_argument(
+        "--normalize-embeddings",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="L2-normalize output vectors (enabled by default)",
+    )
     parser.add_argument(
         "--event-types",
         default=",".join(TARGET_EVENT_TYPES),
@@ -189,8 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         missing = int((~result.vocab["has_description"]).sum() - 2)  # exclude PAD/UNK
         print(
-            f"Dry run complete. Real codes missing description: "
-            f"{max(missing, 0):,}"
+            f"Dry run complete. Real codes missing description: " f"{max(missing, 0):,}"
         )
         return 0
 
@@ -205,7 +215,8 @@ def main(argv: list[str] | None = None) -> int:
         encoder_kind,
         model=model,
         device=args.device,
-        normalize=True,
+        revision=args.revision,
+        normalize=args.normalize_embeddings,
         **kwargs,
     )
     spec = encoder.spec

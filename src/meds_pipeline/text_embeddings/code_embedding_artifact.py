@@ -1,4 +1,4 @@
-"""Save / load / validate pluggable code-embedding artifacts."""
+"""Encode vocabularies and save, load, and validate code-embedding artifacts."""
 
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from meds_pipeline.artifacts.embed_text import (
+from .base import TextEncoder
+
+from meds_pipeline.text_embeddings.embed_text import (
     MISSING_DESCRIPTION_SENTINEL,
     PAD_CODE,
     PAD_ID,
@@ -55,6 +57,36 @@ class LoadedCodeEmbeddingArtifact:
     vocab: pd.DataFrame
     embeddings: np.ndarray
     manifest: dict[str, Any]
+
+
+def encode_vocab_embeddings(
+    embed_texts: Sequence[str],
+    encoder: TextEncoder,
+    *,
+    pad_id: int = PAD_ID,
+    batch_size: int = 64,
+    show_progress_bar: bool = True,
+) -> np.ndarray:
+    """Validate the encoder contract and apply the vocabulary's PAD convention."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    matrix = np.asarray(
+        encoder.encode(
+            embed_texts, batch_size=batch_size, show_progress_bar=show_progress_bar
+        ),
+        dtype=np.float32,
+    )
+    expected_shape = (len(embed_texts), encoder.spec.embed_dim)
+    if encoder.spec.embed_dim <= 0 or matrix.shape != expected_shape:
+        raise ValueError(
+            f"Encoder output shape {matrix.shape} != expected {expected_shape}"
+        )
+    if not np.isfinite(matrix).all():
+        raise ValueError("Encoder output contains NaN or Inf")
+    matrix = matrix.copy()
+    if 0 <= pad_id < len(matrix):
+        matrix[pad_id] = 0.0
+    return matrix
 
 
 def artifact_directory(
@@ -242,7 +274,9 @@ def validate_artifact(
         raise ValueError("UNK must occupy code_id=1")
     if str(vocab.iloc[1]["code"]) != UNK_CODE:
         raise ValueError(f"UNK code must be {UNK_CODE!r}")
-    if str(vocab.iloc[1]["embed_text"]) != str(manifest.get("unk_embed_text", UNK_EMBED_TEXT)):
+    if str(vocab.iloc[1]["embed_text"]) != str(
+        manifest.get("unk_embed_text", UNK_EMBED_TEXT)
+    ):
         raise ValueError("UNK embed_text does not match manifest")
 
     if int(manifest["n_codes"]) != vocab_size - 2:

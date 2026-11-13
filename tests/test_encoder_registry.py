@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from meds_pipeline.artifacts.encoder_registry import (
+from meds_pipeline.text_embeddings.registry import (
     available_encoders,
     create_encoder,
     default_model_for,
 )
-from meds_pipeline.artifacts.text_encoders import MockEncoder
+from meds_pipeline.text_embeddings.encoders import MockEncoder
 
 
 def test_available_encoders_registers_only_expected_backends():

@@ -262,107 +262,77 @@ PYTHONPATH=src python src/split_patients.py --source mimic --cfg mimic.yaml --fo
 2. Check output statistics for each component
 3. Gradually increase patient count until you find the appropriate scale
 
-## Code Embeddings (offline)
+## Text Embeddings (offline)
 
-Precompute text-encoder embeddings for MEDS `diagnosis` and `procedures` codes
-and cache them as a loadable artifact. Downstream model repos read the artifact
-at training time; the encoder is **not** called during training.
-
-The pipeline is encoder-agnostic. The default **backend** is
-`sentence_transformers` and the default **model** is `FremyCompany/BioLORD-2023`;
-BioLORD is the default model, not the only one. Adding ClinicalBERT / SapBERT
-means registering a new backend, not rewriting the pipeline.
-
-Full design: [doc/CODE_EMBEDDINGS_PLAN.md](doc/CODE_EMBEDDINGS_PLAN.md).
-Usage details: [doc/CODE_EMBEDDINGS.md](doc/CODE_EMBEDDINGS.md).
-
-### Artifact path
-
-```
-{output_root}/code_embeddings/v1/dx_proc/
-├── manifest.json       # schema version, encoder_*, vocab/embed_text/embedding hashes
-├── code_vocab.parquet
-└── embeddings.npy
-```
-
-The folder name is fixed per encoder (`dx_proc` by default; use e.g.
-`dx_proc_clinicalbert` for other encoders). Content fingerprints are in
-`manifest.json`: `vocab_hash` (code set), `embed_text_hash` (encoder input),
-`embedding_hash` (final matrix). Publishing over an existing directory requires
-`--overwrite`.
-
-### Reproduce (production paths)
+Install with `pip install -r requirements.txt`. The
+`meds_pipeline.text_embeddings` package converts MEDS clinical code descriptions
+to frozen vectors. BioLORD is the default model; the pipeline supports other
+text encoders through the same interface. Encoder dependencies are imported
+only when the real backend is constructed.
 
 ```bash
-cd MEDS-pipeline
-conda activate pytorch
-pip install -r requirements-biolord.txt
-# If import errors mention huggingface-hub, also:
-#   PYTHONNOUSERSITE=1 pip install -r requirements-biolord.txt
-
-# 1) Optional: inspect vocabulary only (no GPU encoding)
-PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
+python src/build_code_embeddings.py \
   --source mimic \
-  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
-  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
-  --dry-run
-
-# 2) Build MIMIC artifact (GPU recommended)
-PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
-  --source mimic \
-  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
-  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
-  --device cuda --batch-size 128
-
-# 3) Build AHS artifact
-PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
-  --source ahs \
-  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/ahs/ahs_meds_core_by_patient \
-  --output-root /data/padmalab_external/special_project/meds_pipeline_output/ahs/ehr_encoder_artifacts \
-  --device cuda --batch-size 128
-
-# 4) Validate
-PYTHONNOUSERSITE=1 PYTHONPATH=src python - <<'PY'
-from pathlib import Path
-from meds_pipeline.artifacts.code_embedding_artifact import load_artifact
-for p in [
-    "/data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts/code_embeddings/v1/dx_proc",
-    "/data/padmalab_external/special_project/meds_pipeline_output/ahs/ehr_encoder_artifacts/code_embeddings/v1/dx_proc",
-]:
-    art = load_artifact(p)
-    m = art.manifest
-    print(m["source"], m["encoder_kind"], m["encoder_model"], m["n_codes"], m["vocab_hash"][:16], art.embeddings.shape)
-PY
-```
-
-Switch encoders with `--encoder` / `--model` and a distinct `--artifact-name`
-(see [doc/CODE_EMBEDDINGS.md](doc/CODE_EMBEDDINGS.md#adding-another-encoder-eg-clinicalbert)).
-
-For lab-test-name embeddings, build a separate artifact so the scope is explicit:
-
-```bash
-PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
-  --source mimic \
-  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
-  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
-  --event-types lab \
-  --artifact-name lab \
+  --meds-data /path/to/meds_buckets \
+  --output-root /path/to/ehr_encoder_artifacts \
+  --event-types diagnosis,procedures,lab \
+  --artifact-name dx_proc_lab \
+  --encoder sentence_transformers --model FremyCompany/BioLORD-2023 \
+  --revision 167aab527b238a50ca65224e6319215d2ff4fc9f \
   --device cuda --batch-size 128
 ```
 
-This writes to `{output_root}/code_embeddings/v1/lab/`. Lab `value_text` is
-cleaned to the lab test identity only; numeric/raw results stay out of the
-embedding text.
+Use `--source ahs` for AHS. Input accepts a parquet file or a directory of
+`bucket*.parquet` files. By default only diagnosis/procedures are selected.
+Lab text retains the test name and excludes raw results; numeric measurements
+stay separate. `--dry-run` scans the vocabulary without encoding or writing.
+`--encoder mock` runs a deterministic smoke test without model downloads.
+Normalization defaults to L2; disable with `--no-normalize-embeddings`.
 
-### Current production artifacts
+Outputs are `code_vocab.parquet`, `embeddings.npy`, and `manifest.json` under
+`{output_root}/code_embeddings/v1/{artifact_name}/`. Vectors are float32
+`[vocab_size, embedding_dim]`, with PAD at row 0 and UNK at row 1. The manifest
+records model identity, revision, dimension, normalization, and content hashes.
+Use a different artifact name for each model/configuration; replacing an
+existing output requires `--overwrite`.
 
-| Source | Path | n_codes | vocab_hash |
-|--------|------|---------|------------|
-| MIMIC | `.../mimic/ehr_encoder_artifacts/code_embeddings/v1/dx_proc/` | 44,872 | `c02f33a8fec5...` |
-| AHS | `.../ahs/ehr_encoder_artifacts/code_embeddings/v1/dx_proc/` | 24,091 | `c6369f5aabb8...` |
+### Replacing the text encoder
 
-Backend `sentence_transformers`, model `FremyCompany/BioLORD-2023`. These
-predate the schema change and load as `legacy_biolord_v1`.
+For a compatible SentenceTransformer model, change `--model` and `--revision`.
+For a different backend, implement `TextEncoder` from
+`meds_pipeline.text_embeddings.base`: expose an `EncoderSpec` and
+`encode(texts, batch_size=64, show_progress_bar=True)`, returning finite float32
+`[N, D]` vectors in input order. Report the model's actual dimension and pooling
+in its spec; no dimension is hard-coded into the vocabulary builder.
+
+Register a factory before invoking the CLI's `main(argv)` from a Python wrapper:
+
+```python
+from meds_pipeline.text_embeddings import register_encoder
+from build_code_embeddings import main
+from my_encoder import MyTextEncoder
+
+def make_encoder(*, model, device, revision, normalize):
+    return MyTextEncoder(
+        model_name=model, device=device, revision=revision,
+        normalize_embeddings=normalize,
+    )
+
+register_encoder("my_backend", make_encoder, default_model="my-model")
+main()  # This wrapper accepts --encoder my_backend and the usual CLI arguments.
+```
+
+Place the wrapper in `src/` or run with `PYTHONPATH=src`. Factories should accept
+only supported options explicitly and reject unsupported settings. Registration
+rejects duplicate names. Vocabulary extraction, PAD handling, and artifact
+validation stay outside encoder implementations.
+
+The shared BioLORD sidecar builder lives in the `cardio-context` repository:
+`scripts/data_pipeline/build_shared_biolord_patient_cache_sidecar.py`. It maps
+patient-cache IDs to rows in this artifact and checks coverage; it does not
+generate embeddings. A different encoder or dimension may require a new
+downstream projection and contract, even though the artifact file format remains
+the same. Legacy BioLORD manifests remain readable.
 
 TODO:
 
