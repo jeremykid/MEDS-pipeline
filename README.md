@@ -262,6 +262,108 @@ PYTHONPATH=src python src/split_patients.py --source mimic --cfg mimic.yaml --fo
 2. Check output statistics for each component
 3. Gradually increase patient count until you find the appropriate scale
 
+## Code Embeddings (offline)
+
+Precompute text-encoder embeddings for MEDS `diagnosis` and `procedures` codes
+and cache them as a loadable artifact. Downstream model repos read the artifact
+at training time; the encoder is **not** called during training.
+
+The pipeline is encoder-agnostic. The default **backend** is
+`sentence_transformers` and the default **model** is `FremyCompany/BioLORD-2023`;
+BioLORD is the default model, not the only one. Adding ClinicalBERT / SapBERT
+means registering a new backend, not rewriting the pipeline.
+
+Full design: [doc/CODE_EMBEDDINGS_PLAN.md](doc/CODE_EMBEDDINGS_PLAN.md).
+Usage details: [doc/CODE_EMBEDDINGS.md](doc/CODE_EMBEDDINGS.md).
+
+### Artifact path
+
+```
+{output_root}/code_embeddings/v1/dx_proc/
+├── manifest.json       # schema version, encoder_*, vocab/embed_text/embedding hashes
+├── code_vocab.parquet
+└── embeddings.npy
+```
+
+The folder name is fixed per encoder (`dx_proc` by default; use e.g.
+`dx_proc_clinicalbert` for other encoders). Content fingerprints are in
+`manifest.json`: `vocab_hash` (code set), `embed_text_hash` (encoder input),
+`embedding_hash` (final matrix). Publishing over an existing directory requires
+`--overwrite`.
+
+### Reproduce (production paths)
+
+```bash
+cd MEDS-pipeline
+conda activate pytorch
+pip install -r requirements-biolord.txt
+# If import errors mention huggingface-hub, also:
+#   PYTHONNOUSERSITE=1 pip install -r requirements-biolord.txt
+
+# 1) Optional: inspect vocabulary only (no GPU encoding)
+PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
+  --source mimic \
+  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
+  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
+  --dry-run
+
+# 2) Build MIMIC artifact (GPU recommended)
+PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
+  --source mimic \
+  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
+  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
+  --device cuda --batch-size 128
+
+# 3) Build AHS artifact
+PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
+  --source ahs \
+  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/ahs/ahs_meds_core_by_patient \
+  --output-root /data/padmalab_external/special_project/meds_pipeline_output/ahs/ehr_encoder_artifacts \
+  --device cuda --batch-size 128
+
+# 4) Validate
+PYTHONNOUSERSITE=1 PYTHONPATH=src python - <<'PY'
+from pathlib import Path
+from meds_pipeline.artifacts.code_embedding_artifact import load_artifact
+for p in [
+    "/data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts/code_embeddings/v1/dx_proc",
+    "/data/padmalab_external/special_project/meds_pipeline_output/ahs/ehr_encoder_artifacts/code_embeddings/v1/dx_proc",
+]:
+    art = load_artifact(p)
+    m = art.manifest
+    print(m["source"], m["encoder_kind"], m["encoder_model"], m["n_codes"], m["vocab_hash"][:16], art.embeddings.shape)
+PY
+```
+
+Switch encoders with `--encoder` / `--model` and a distinct `--artifact-name`
+(see [doc/CODE_EMBEDDINGS.md](doc/CODE_EMBEDDINGS.md#adding-another-encoder-eg-clinicalbert)).
+
+For lab-test-name embeddings, build a separate artifact so the scope is explicit:
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=src python src/build_code_embeddings.py \
+  --source mimic \
+  --meds-data /data/padmalab_external/special_project/meds_pipeline_output/mimic/mimic_meds_core_by_patient \
+  --output-root /data/padmalab_external/special_project/meds_pipeline_output/mimic/ehr_encoder_artifacts \
+  --event-types lab \
+  --artifact-name lab \
+  --device cuda --batch-size 128
+```
+
+This writes to `{output_root}/code_embeddings/v1/lab/`. Lab `value_text` is
+cleaned to the lab test identity only; numeric/raw results stay out of the
+embedding text.
+
+### Current production artifacts
+
+| Source | Path | n_codes | vocab_hash |
+|--------|------|---------|------------|
+| MIMIC | `.../mimic/ehr_encoder_artifacts/code_embeddings/v1/dx_proc/` | 44,872 | `c02f33a8fec5...` |
+| AHS | `.../ahs/ehr_encoder_artifacts/code_embeddings/v1/dx_proc/` | 24,091 | `c6369f5aabb8...` |
+
+Backend `sentence_transformers`, model `FremyCompany/BioLORD-2023`. These
+predate the schema change and load as `legacy_biolord_v1`.
+
 TODO:
 
 write build_schema
